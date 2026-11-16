@@ -7,6 +7,7 @@ from retaincase.ingest import initialize, load
 from retaincase.rules import evaluate
 from retaincase.requests import triage, fulfill
 from retaincase.handoff import prepare, acknowledge
+from retaincase.recall import open_case, submit
 from retaincase.store import connect
 
 FIX = Path(__file__).resolve().parent.parent / 'fixtures'
@@ -67,4 +68,36 @@ def test_request_and_custody_have_cross_object_constraints(tmp_path):
     expected=json.loads((FIX/'config.json').read_text(encoding='utf-8'))['subjects']['D']['sha256']
     prepare(other,'T-Y','receiver-A',['D'],'2099-01-01T00:00:00Z')
     acknowledge(other,'T-Y','receiver-A',{'D':expected},'2030-01-01T00:00:00Z')
-    assert triage(other,'REQ-Y',['D'],'2099-01-01T00:00:00Z')['items'][0]['obligation']=='investigate'
+    assert triage(other,'REQ-Y',['D'],'2099-01-01T00:00:00Z')['items'][0]['obligation']=='remote_erase'
+
+def test_recall_partial_receipts_then_remote_fulfillment(tmp_path):
+    fixture=json.loads((FIX/'recall-cases.json').read_text(encoding='utf-8'))
+    config=json.loads((FIX/'config.json').read_text(encoding='utf-8'))
+    config['subjects']['E']=fixture['additional_subject']
+    config_path=tmp_path/'config.json';config_path.write_text(json.dumps(config),encoding='utf-8')
+    db=tmp_path/'ledger.db';initialize(db,config_path);load(db,FIX/'events.jsonl');evaluate(db)
+    prepare(db,'T','receiver-A',['D','E'],'2099-01-01T00:00:00Z')
+    assert acknowledge(db,'T','receiver-A',fixture['ack_hashes'],'2030-01-01T00:00:00Z')['state']=='accepted'
+    request=triage(db,'REQ',['D','E'],'2099-01-01T00:00:00Z')
+    assert {x['obligation'] for x in request['items']}=={'remote_erase'}
+    assert fulfill(db,'REQ')['missing_remote_receipt']==['D','E']
+    assert open_case(db,'RC','REQ','T')['state']=='pending'
+    partial=submit(db,'RC','receiver-A',fixture['first_batch'])
+    assert partial['state']=='partial'
+    assert {x['subject']:x['state'] for x in partial['items']}=={'D':'confirmed','E':'disputed'}
+    assert fulfill(db,'REQ')['missing_remote_receipt']==['D','E']
+    assert submit(db,'RC','receiver-A',fixture['retry'])['state']=='completed'
+    assert fulfill(db,'REQ')['state']=='fulfilled'
+
+def test_recall_rejects_forged_receipt_and_conflicting_key(tmp_path):
+    fixture=json.loads((FIX/'recall-cases.json').read_text(encoding='utf-8'))
+    db=ready(tmp_path)
+    prepare(db,'T','receiver-A',['D'],'2099-01-01T00:00:00Z')
+    acknowledge(db,'T','receiver-A',{'D':fixture['ack_hashes']['D']},'2030-01-01T00:00:00Z')
+    triage(db,'REQ',['D'],'2099-01-01T00:00:00Z');open_case(db,'RC','REQ','T')
+    forged={**fixture['first_batch'][0],'certificate':'forged'}
+    assert submit(db,'RC','receiver-A',[forged])['state']=='disputed'
+    with pytest.raises(ValueError,match='receipt_identity_conflict'):
+        submit(db,'RC','receiver-A',[fixture['first_batch'][0]])
+    with pytest.raises(ValueError,match='recall_recipient_mismatch'):
+        submit(db,'RC','receiver-B',[fixture['retry'][0]])

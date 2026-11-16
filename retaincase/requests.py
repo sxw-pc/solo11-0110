@@ -46,16 +46,20 @@ def triage(db_path, request_id, subjects, due_at):
         if not db.execute('SELECT 1 FROM subject WHERE id=? AND batch_id=?', (subject, batch['id'])).fetchone():
             raise ValueError(f'unknown_request_subject:{subject}')
         decision = db.execute('SELECT status,detail FROM decision WHERE run_id=? AND subject=?', (run['id'], subject)).fetchone()
-        transferred = db.execute("SELECT t.id FROM custody_transfer t JOIN custody_item i ON i.transfer_id=t.id WHERE i.subject=? AND t.state='accepted' ORDER BY t.id LIMIT 1", (subject,)).fetchone()
-        if transferred or not decision or decision['status'] == '证据不足':
+        transfers = db.execute("SELECT t.id FROM custody_transfer t JOIN custody_item i ON i.transfer_id=t.id WHERE i.subject=? AND t.state='accepted' ORDER BY t.id", (subject,)).fetchall()
+        transferred = transfers[0] if len(transfers)==1 else None
+        if len(transfers)>1 or not decision or decision['status'] == '证据不足':
             obligation = 'investigate'
+        elif transferred and decision['status'] == '可销毁':
+            obligation = 'remote_erase'
         elif decision['status'] == '可销毁':
             obligation = 'erase'
         else:
             obligation = 'defer'
-        lines.append((subject, obligation, json.dumps({'run_id':run['id'], 'decision':dict(decision) if decision else None, 'custody_transfer': transferred['id'] if transferred else None}, ensure_ascii=False)))
+        lines.append((subject, obligation, json.dumps({'run_id':run['id'], 'decision':dict(decision) if decision else None, 'custody_transfer': transferred['id'] if transferred else None, 'accepted_transfer_count':len(transfers)}, ensure_ascii=False)))
     kinds = {line[1] for line in lines}
-    state = 'uncertain' if 'investigate' in kinds else ('ready' if kinds == {'erase'} else ('deferred' if kinds == {'defer'} else 'partial'))
+    actionable={'erase','remote_erase'}
+    state = 'uncertain' if 'investigate' in kinds else ('ready' if kinds<=actionable else ('deferred' if kinds == {'defer'} else 'partial'))
     if due < datetime.now(timezone.utc) and state != 'ready':
         state = 'uncertain'  # overdue obligations require an explicit review
     with db:
@@ -74,11 +78,18 @@ def fulfill(db_path, request_id):
     if latest != request['run_id']:
         raise ValueError('request_decision_stale')
     items = db.execute('SELECT * FROM erasure_item WHERE request_id=?', (request_id,)).fetchall()
+    from .recall import SCHEMA as RECALL_SCHEMA
+    db.executescript(RECALL_SCHEMA)
     missing = [r['subject'] for r in items if r['obligation']=='erase' and not db.execute(
         "SELECT 1 FROM execution WHERE subject=? AND action='destroy' AND run_id=?", (r['subject'],latest)).fetchone()]
-    if missing:
-        return {'request':request_id,'state':request['state'],'missing_execution':missing}
-    state = 'fulfilled' if all(r['obligation']=='erase' for r in items) else request['state']
+    missing_remote=[r['subject'] for r in items if r['obligation']=='remote_erase' and not db.execute(
+        """SELECT 1 FROM custody_recall c JOIN recall_item i ON i.recall_id=c.id
+           WHERE c.request_id=? AND c.run_id=? AND c.state='completed'
+           AND i.subject=? AND i.state='confirmed'""",(request_id,latest,r['subject'])).fetchone()]
+    if missing or missing_remote:
+        db.close();return {'request':request_id,'state':request['state'],
+                           'missing_execution':missing,'missing_remote_receipt':missing_remote}
+    state = 'fulfilled' if all(r['obligation'] in ('erase','remote_erase') for r in items) else request['state']
     with db:
         db.execute('UPDATE erasure_request SET state=? WHERE id=?', (state,request_id))
     db.close()

@@ -1,6 +1,7 @@
 {
   "batch_id": "retain-demo",
   "rule_version": "v1",
+  "custody_keys": {"receiver-A": "synthetic-receiver-A-key"},
   "as_of": "2026-06-01",
   "policy": {
     "ordinary": {

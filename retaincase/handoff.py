@@ -34,7 +34,7 @@ def prepare(db_path, transfer_id, recipient, subjects, expires_at):
     config=json.loads(batch['config_raw'])
     items=[]
     for subject in sorted(subjects):
-        pending=db.execute("SELECT r.id FROM erasure_request r JOIN erasure_item i ON i.request_id=r.id WHERE i.subject=? AND i.obligation='erase' AND r.state!='fulfilled' ORDER BY r.id LIMIT 1",(subject,)).fetchone()
+        pending=db.execute("SELECT r.id FROM erasure_request r JOIN erasure_item i ON i.request_id=r.id WHERE i.subject=? AND i.obligation IN ('erase','remote_erase') AND r.state!='fulfilled' ORDER BY r.id LIMIT 1",(subject,)).fetchone()
         if pending: raise ValueError(f'pending_erasure_request:{subject}:{pending["id"]}')
         decision=db.execute('SELECT status FROM decision WHERE run_id=? AND subject=?',(run['id'],subject)).fetchone()
         if not decision or decision['status']=='证据不足': raise ValueError(f'cannot_transfer_uncertain:{subject}')
