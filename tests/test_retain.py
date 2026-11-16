@@ -72,3 +72,59 @@ def test_independent_recheck_detects_tampered_decision(tmp_path):
     db=setup(tmp_path);evaluate(db);assert verify_decisions(db)==[]
     con=connect(db);con.execute("UPDATE decision SET status='可销毁' WHERE subject='B'");con.commit();con.close()
     assert 'decision_mismatch:B' in verify_decisions(db)
+
+def test_execution_requires_current_authorized_plan(tmp_path):
+    db=setup(tmp_path);evaluate(db)
+    plan=tmp_path/'plan.json';action('plan',db,out=plan)
+    root=tmp_path/'sandbox';root.mkdir();(root/'D.bin').write_bytes(b'demo')
+    forged=tmp_path/'forged.json';forged.write_text('[]',encoding='utf-8')
+    with pytest.raises(ValueError,match='plan_not_authorized'):
+        action('execute',db,sandbox=root,out=forged)
+    assert (root/'D.bin').exists()
+    cfg=json.loads((FIX/'config.json').read_text(encoding='utf-8'))
+    cfg['rule_version']='v2';cfg['policy']['ordinary']['days']=365
+    revision=tmp_path/'v2.json';revision.write_text(json.dumps(cfg),encoding='utf-8')
+    action('recheck',db,out=revision)
+    with pytest.raises(ValueError,match='plan_not_authorized'):
+        action('execute',db,sandbox=root,out=plan)
+    assert (root/'D.bin').exists()
+
+def test_future_use_cannot_move_asof_retention_start(tmp_path):
+    db=setup(tmp_path);con=connect(db);cfg=json.loads(con.execute('SELECT config_raw FROM batch').fetchone()[0])
+    cfg['as_of']='2026-06-30';con.execute('UPDATE batch SET config_raw=?',(json.dumps(cfg).encode(),));con.commit();con.close()
+    p=tmp_path/'future.jsonl';p.write_text(json.dumps({'event_key':'u2','subject':'C','kind':'use','at':'2026-07-02'}),encoding='utf-8')
+    load(db,p)
+    assert evaluate(db)['C']=='可销毁'
+
+def test_frozen_policy_bytes_guard_execution(tmp_path):
+    db=setup(tmp_path);evaluate(db);plan=tmp_path/'plan.json';action('plan',db,out=plan)
+    root=tmp_path/'sandbox';root.mkdir();(root/'D.bin').write_bytes(b'demo')
+    con=connect(db);cfg=json.loads(con.execute('SELECT config_raw FROM batch').fetchone()[0])
+    cfg['policy']['ordinary']['days']=365
+    con.execute('UPDATE batch SET config_raw=?',(json.dumps(cfg).encode(),));con.commit();con.close()
+    with pytest.raises(ValueError,match='batch_config_tampered'):
+        action('execute',db,sandbox=root,out=plan)
+    assert (root/'D.bin').exists()
+
+def test_termination_start_and_unmatched_release(tmp_path):
+    db=setup(tmp_path);con=connect(db);cfg=json.loads(con.execute('SELECT config_raw FROM batch').fetchone()[0])
+    cfg['policy']['active']['start']='terminated';cfg['as_of']='2026-06-30'
+    con.execute('UPDATE batch SET config_raw=?',(json.dumps(cfg).encode(),));con.commit();con.close()
+    assert evaluate(db)['C']=='证据不足'
+    p=tmp_path/'terminate.jsonl';p.write_text('\n'.join(json.dumps(x) for x in [
+      {'event_key':'t1','subject':'C','kind':'terminate','at':'2026-05-01'},
+      {'event_key':'bad-release','subject':'D','kind':'hold_end','hold_id':'nonexistent','at':'2026-05-01'}]),encoding='utf-8')
+    load(db,p);result=evaluate(db)
+    assert result['C']=='可销毁' and result['D']=='证据不足'
+    assert connect(db).execute("SELECT 1 FROM issue WHERE code='unmatched_hold_release' AND subject='D'").fetchone()
+
+def test_offset_timestamp_changes_retention_day_and_naive_time_isolated(tmp_path):
+    db=setup(tmp_path);con=connect(db);cfg=json.loads(con.execute('SELECT config_raw FROM batch').fetchone()[0])
+    cfg['as_of']='2026-06-30T02:00:00Z';cfg['policy']['active']['days']=1
+    con.execute('UPDATE batch SET config_raw=?',(json.dumps(cfg).encode(),));con.commit();con.close()
+    p=tmp_path/'offset.jsonl';p.write_text('\n'.join(json.dumps(x) for x in [
+      {'event_key':'u-offset','subject':'C','kind':'use','at':'2026-06-29T23:30:00-02:00'},
+      {'event_key':'u-naive','subject':'C','kind':'use','at':'2026-06-29T23:30:00'}]),encoding='utf-8')
+    assert load(db,p)==1
+    assert evaluate(db)['C']=='冻结'
+    assert connect(db).execute("SELECT 1 FROM issue WHERE code='parse_error' AND line_no=2").fetchone()

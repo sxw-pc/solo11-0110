@@ -2,32 +2,39 @@ import json,hashlib
 from datetime import date,timedelta
 from pathlib import Path
 from .store import connect
+from .timeline import instant,utc_day
 
 def _config(db):return json.loads(db.execute('SELECT config_raw FROM batch LIMIT 1').fetchone()[0])
 def evaluate(path):
     db=connect(path);config=_config(db);events=[dict(r) for r in db.execute('SELECT * FROM raw_event ORDER BY at,id')]
     grouped={s:[] for s in config['subjects']}
     for e in events:grouped[e['subject']].append(json.loads(e['payload']))
-    asof=date.fromisoformat(config['as_of']);decision={};issues={};dependencies={}
+    asof=instant(config['as_of']);decision={};issues={};dependencies={}
     all_events=[json.loads(e['payload']) for e in events]
     for subject,spec in config['subjects'].items():
         ev=grouped[subject]+[e for e in all_events if e.get('scope_tag') in spec.get('tags',[]) and e['subject']!=subject and e['kind'] in ('hold_start','hold_end')]
-        ev=sorted(ev,key=lambda e:(e.get('at') or '',e['event_key']))
-        codes=[];start=spec.get('created')
-        uses=[e['at'] for e in ev if e['kind']=='use' and e.get('at')]
-        if config['policy'][spec['category']]['start']=='last_use':
-            if uses:start=max(uses)
-            else:codes.append('evidence_gap')
+        ev=sorted(ev,key=lambda e:(instant(e['at']) if e.get('at') else asof,e['event_key']))
+        codes=[];start_kind=config['policy'][spec['category']]['start']
+        if start_kind=='created':start=spec.get('created')
+        elif start_kind=='terminated':
+            ends=[e['at'] for e in ev if e['kind']=='terminate' and e.get('at') and instant(e['at'])<=asof]
+            start=max(ends,key=instant) if ends else None
+        elif start_kind=='last_use':
+            uses=[e['at'] for e in ev if e['kind']=='use' and e.get('at') and instant(e['at'])<=asof]
+            start=max(uses,key=instant) if uses else None
+        else:raise ValueError('unknown_policy_start')
+        if not start:codes.append('evidence_gap')
         holds={};active=[]
         for e in ev:
-            if e['kind']=='hold_start' and e['at']<=config['as_of']:holds[e['hold_id']]=e['at']
-            if e['kind']=='hold_end' and e['at']<=config['as_of']:holds.pop(e['hold_id'],None)
-            if e['kind']=='depends_on':dependencies.setdefault(subject,set()).add(e['parent'])
+            if e['kind']=='hold_start' and instant(e['at'])<=asof:holds[e['hold_id']]=e['at']
+            if e['kind']=='hold_end' and instant(e['at'])<=asof:
+                if e['hold_id'] not in holds:codes.append('unmatched_hold_release')
+                else:holds.pop(e['hold_id'])
+            if e['kind']=='depends_on' and instant(e['at'])<=asof:dependencies.setdefault(subject,set()).add(e['parent'])
         active=list(holds)
-        if not start:codes.append('evidence_gap')
-        elif date.fromisoformat(start)+timedelta(days=config['policy'][spec['category']]['days'])>asof:codes.append('not_expired')
+        if start and utc_day(start)+timedelta(days=config['policy'][spec['category']]['days'])>asof.date():codes.append('not_expired')
         if active:codes.append('legal_hold')
-        decision[subject]='证据不足' if 'evidence_gap' in codes else ('冻结' if codes else '可销毁');issues[subject]=codes
+        decision[subject]='证据不足' if {'evidence_gap','unmatched_hold_release'} & set(codes) else ('冻结' if codes else '可销毁');issues[subject]=codes
     visiting=set();visited=set();cycles=set()
     def visit(node):
         if node in visiting:cycles.update(visiting);return
@@ -89,11 +96,30 @@ def action(command,path,sandbox=None,out=None):
         plan=ordered
         targets=[x['path'] for x in plan]
         if len(set(targets))!=len(targets) or any(Path(x).is_absolute() or '..' in Path(x).parts for x in targets):raise ValueError('unsafe_plan')
-        destination=Path(out or 'plan.json');destination.write_text(json.dumps(plan,ensure_ascii=False,indent=2),encoding='utf-8');db.close();return str(destination)
+        destination=Path(out or 'plan.json');body=json.dumps(plan,ensure_ascii=False,indent=2)
+        digest=hashlib.sha256(body.encode('utf-8')).hexdigest()
+        with db:
+            db.execute('INSERT OR IGNORE INTO plan(run_id,digest,body) VALUES ((SELECT max(id) FROM run),?,?)',(digest,body))
+        destination.write_text(body,encoding='utf-8');db.close();return str(destination)
     if command=='execute':
         if not sandbox:raise ValueError('sandbox_required')
         root=Path(sandbox).resolve();root.mkdir(parents=True,exist_ok=True)
-        plan=json.loads(Path(out or 'plan.json').read_text(encoding='utf-8'));done=[]
+        frozen=db.execute('SELECT config_raw,config_hash FROM batch WHERE id=?',(config['batch_id'],)).fetchone()
+        if hashlib.sha256(frozen['config_raw']).hexdigest()!=frozen['config_hash']:
+            raise ValueError('batch_config_tampered')
+        body=Path(out or 'plan.json').read_text(encoding='utf-8')
+        digest=hashlib.sha256(body.encode('utf-8')).hexdigest()
+        latest=db.execute('SELECT max(id) FROM run').fetchone()[0]
+        if not db.execute('SELECT 1 FROM plan WHERE digest=? AND run_id=? AND body=?',(digest,latest,body)).fetchone():
+            raise ValueError('plan_not_authorized_for_latest_run')
+        plan=json.loads(body);done=[]
+        eligible={r['subject'] for r in db.execute("SELECT subject FROM decision WHERE run_id=? AND status='可销毁'",(latest,))}
+        if {item['subject'] for item in plan}!=eligible or len(plan)!=len(eligible):
+            raise ValueError('plan_decision_mismatch')
+        for item in plan:
+            spec=config['subjects'].get(item['subject'])
+            if not spec or item['path']!=spec['path'] or item['sha256']!=spec.get('sha256',''):
+                raise ValueError('plan_config_mismatch')
         for item in plan:
             target=(root/item['path']).resolve()
             if root not in target.parents:raise ValueError('unsafe_path')
