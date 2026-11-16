@@ -13,6 +13,10 @@ def main():
     v=sub.add_parser('verify');v.add_argument('--db',required=True);v.add_argument('--sandbox');v.add_argument('--out')
     for name in ('plan','execute','recheck'):
         x=sub.add_parser(name);x.add_argument('--db',required=True);x.add_argument('--sandbox');x.add_argument('--out')
+    rq=sub.add_parser('request-triage');rq.add_argument('--db',required=True);rq.add_argument('--id',required=True);rq.add_argument('--subjects',required=True);rq.add_argument('--due',required=True)
+    rf=sub.add_parser('request-fulfill');rf.add_argument('--db',required=True);rf.add_argument('--id',required=True)
+    hp=sub.add_parser('handoff-prepare');hp.add_argument('--db',required=True);hp.add_argument('--id',required=True);hp.add_argument('--recipient',required=True);hp.add_argument('--subjects',required=True);hp.add_argument('--expires',required=True)
+    ha=sub.add_parser('handoff-ack');ha.add_argument('--db',required=True);ha.add_argument('--id',required=True);ha.add_argument('--recipient',required=True);ha.add_argument('--hashes',required=True);ha.add_argument('--at',required=True)
     a=p.parse_args()
     if a.command=='demo':
         work=Path(a.workdir or tempfile.mkdtemp(prefix='evidence-'));work.mkdir(parents=True,exist_ok=True);db=work/'ledger.db';fixture=Path(__file__).resolve().parent.parent/'fixtures'
@@ -32,5 +36,18 @@ def main():
             out.write_text(json.dumps({'integrity_problems':checks,'target':target},ensure_ascii=False,indent=2),encoding='utf-8')
             out.with_suffix('.md').write_text('# 独立对账\n\n'+'\n'.join(f'- {x}' for x in target),encoding='utf-8')
         print({'integrity_problems':checks,'target':target})
+    elif a.command=='request-triage':
+        from .requests import triage
+        print(triage(a.db,a.id,a.subjects.split(','),a.due))
+    elif a.command=='request-fulfill':
+        from .requests import fulfill
+        print(fulfill(a.db,a.id))
+    elif a.command=='handoff-prepare':
+        from .handoff import prepare
+        print(prepare(a.db,a.id,a.recipient,a.subjects.split(','),a.expires))
+    elif a.command=='handoff-ack':
+        import json
+        from .handoff import acknowledge
+        print(acknowledge(a.db,a.id,a.recipient,json.loads(Path(a.hashes).read_text(encoding='utf-8')),a.at))
     else:print(action(a.command,a.db,sandbox=getattr(a,'sandbox',None),out=getattr(a,'out',None)))
 if __name__=='__main__':main()

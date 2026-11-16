@@ -1,0 +1,1 @@
+{"partial_request":{"id":"REQ-1","subjects":["A","D"],"due":"2099-01-01T00:00:00Z"},"handoff":{"id":"T-1","recipient":"receiver-A","subjects":["D"],"expires":"2099-01-01T00:00:00Z"},"conflict":{"same_request_id_different_subjects":["D"]},"partial_failure":{"missing_execution_proof":"D"}}
