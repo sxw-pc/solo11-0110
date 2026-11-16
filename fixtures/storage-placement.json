@@ -1,0 +1,10 @@
+{
+  "pools": [
+    {"id": "warm-A", "capacity_bytes": 100},
+    {"id": "cold-B", "capacity_bytes": 200}
+  ],
+  "placements": [
+    {"subject": "A", "pool_id": "warm-A", "bytes": 40, "inventory_digest": "b31bdc4a7ad98ae07cee791a8be6c23c70e73a407b93b164953634fbd6367920"},
+    {"subject": "B", "pool_id": "warm-A", "bytes": 30, "inventory_digest": "c42a849a8f98477d00e3dc7f0a2677d15519c1ed1af1eb3b7d366596f9bd0f12"}
+  ]
+}

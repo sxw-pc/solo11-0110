@@ -1,5 +1,7 @@
 # 留存裁决簿
 
+增强素材副本新增本地留存对象的存储池登记与初始放置：先完成 `init`、`load`、`evaluate`，再运行 `python -m retaincase storage-seed --db <DB> --fixture fixtures/storage-placement.json`，用 `storage-inventory --db <DB>` 查看结果。该流程只为已冻结对象记录池容量、库存字节与摘要，不移动或销毁沙箱文件；同一对象的放置身份不可静默改写。原有裁决、删除请求、交接和回收命令保持可用。
+
 完全离线，输入与主体均为合成数据。`python -m pip install . --no-build-isolation` 安装；`python -m retaincase demo` 一条命令初始化 SQLite、导入 fixture、计算、生成 JSON/Markdown；`python -m pytest -q` 测试。
 
 数据流：SourceFile 原始字节及哈希 → RawEvent → Subject 与 RuleVersion → Run 内的 Decision、Evidence、Issue → 报告；身份冲突和坏行保留为 Issue。相同文件哈希与事件键幂等。

@@ -19,6 +19,8 @@ def main():
     ha=sub.add_parser('handoff-ack');ha.add_argument('--db',required=True);ha.add_argument('--id',required=True);ha.add_argument('--recipient',required=True);ha.add_argument('--hashes',required=True);ha.add_argument('--at',required=True)
     ro=sub.add_parser('recall-open');ro.add_argument('--db',required=True);ro.add_argument('--id',required=True);ro.add_argument('--request',required=True);ro.add_argument('--transfer',required=True)
     rs=sub.add_parser('recall-submit');rs.add_argument('--db',required=True);rs.add_argument('--id',required=True);rs.add_argument('--recipient',required=True);rs.add_argument('--receipts',required=True)
+    sp=sub.add_parser('storage-seed');sp.add_argument('--db',required=True);sp.add_argument('--fixture',required=True)
+    si=sub.add_parser('storage-inventory');si.add_argument('--db',required=True)
     a=p.parse_args()
     if a.command=='demo':
         work=Path(a.workdir or tempfile.mkdtemp(prefix='evidence-'));work.mkdir(parents=True,exist_ok=True);db=work/'ledger.db';fixture=Path(__file__).resolve().parent.parent/'fixtures'
@@ -58,5 +60,11 @@ def main():
         import json
         from .recall import submit
         print(submit(a.db,a.id,a.recipient,json.loads(Path(a.receipts).read_text(encoding='utf-8'))))
+    elif a.command=='storage-seed':
+        from .storage import load_fixture
+        print(load_fixture(a.db,a.fixture))
+    elif a.command=='storage-inventory':
+        from .storage import inventory
+        print(inventory(a.db))
     else:print(action(a.command,a.db,sandbox=getattr(a,'sandbox',None),out=getattr(a,'out',None)))
 if __name__=='__main__':main()
