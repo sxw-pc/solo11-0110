@@ -1,0 +1,7 @@
+subject,field,value,classification
+A,contact,contact-A,derived
+A,station,station-A,public
+B,contact,contact-B,direct
+B,station,station-B,public
+D,contact,contact-D,direct
+D,station,station-D,public
