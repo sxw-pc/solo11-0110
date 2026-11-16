@@ -102,6 +102,7 @@ def test_frozen_policy_bytes_guard_execution(tmp_path):
     con=connect(db);cfg=json.loads(con.execute('SELECT config_raw FROM batch').fetchone()[0])
     cfg['policy']['ordinary']['days']=365
     con.execute('UPDATE batch SET config_raw=?',(json.dumps(cfg).encode(),));con.commit();con.close()
+    assert any(x.startswith('batch_config:') for x in verify(db))
     with pytest.raises(ValueError,match='batch_config_tampered'):
         action('execute',db,sandbox=root,out=plan)
     assert (root/'D.bin').exists()
@@ -128,3 +129,17 @@ def test_offset_timestamp_changes_retention_day_and_naive_time_isolated(tmp_path
     assert load(db,p)==1
     assert evaluate(db)['C']=='冻结'
     assert connect(db).execute("SELECT 1 FROM issue WHERE code='parse_error' AND line_no=2").fetchone()
+def test_independent_source_chain_rejects_rewritten_event(tmp_path):
+    db=setup(tmp_path);evaluate(db)
+    assert verify(db)==[]
+    con=connect(db)
+    con.execute("UPDATE raw_event SET payload='{}' WHERE id=(SELECT min(id) FROM raw_event)")
+    con.commit();con.close()
+    assert any(problem.startswith('event:') for problem in verify(db))
+
+def test_retained_parent_carries_descendant_source_evidence(tmp_path):
+    db=setup(tmp_path);evaluate(db);con=connect(db)
+    hold=con.execute("SELECT id FROM raw_event WHERE event_key='h1'").fetchone()[0]
+    ancestor=con.execute("SELECT id FROM raw_event WHERE event_key='d1'").fetchone()[0]
+    linked={r[0] for r in con.execute("SELECT event_id FROM evidence WHERE subject='A' AND event_id IS NOT NULL")}
+    assert {hold,ancestor}<=linked

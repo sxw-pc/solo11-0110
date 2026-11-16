@@ -11,9 +11,12 @@ def evaluate(path):
     for e in events:grouped[e['subject']].append(json.loads(e['payload']))
     asof=instant(config['as_of']);decision={};issues={};dependencies={}
     all_events=[json.loads(e['payload']) for e in events]
+    event_by_key={json.loads(e['payload'])['event_key']:e for e in events}
+    used_events={}
     for subject,spec in config['subjects'].items():
         ev=grouped[subject]+[e for e in all_events if e.get('scope_tag') in spec.get('tags',[]) and e['subject']!=subject and e['kind'] in ('hold_start','hold_end')]
         ev=sorted(ev,key=lambda e:(instant(e['at']) if e.get('at') else asof,e['event_key']))
+        used_events[subject]=[event_by_key[e['event_key']] for e in ev]
         codes=[];start_kind=config['policy'][spec['category']]['start']
         if start_kind=='created':start=spec.get('created')
         elif start_kind=='terminated':
@@ -56,13 +59,29 @@ def evaluate(path):
                 if decision[child]!='可销毁' and decision[parent]=='可销毁':decision[parent]='冻结';issues[parent].append('dependent_retained');changed=True
     else:
         for child in dependencies:decision[child]='证据不足';issues[child].append('dependency_cycle')
+    # A retained descendant is evidence for every ancestor it keeps alive. Carry
+    # its source events through the dependency graph so the parent's proof can
+    # be reconstructed without trusting a summary string.
+    for _ in range(len(decision)):
+        changed=False
+        for child,parents in dependencies.items():
+            for parent in parents:
+                if parent not in used_events:continue
+                known={e['id'] for e in used_events[parent]}
+                added=[e for e in used_events[child] if e['id'] not in known]
+                if added:used_events[parent].extend(added);changed=True
+        if not changed:break
     with db:
         run=db.execute("INSERT INTO run(batch_id,status) VALUES (?, '待接收')",(config['batch_id'],)).lastrowid
         db.execute("UPDATE run SET status='已校验' WHERE id=?",(run,))
         for subject,status in decision.items():
             for code in sorted(set(issues[subject])):db.execute('INSERT INTO issue(run_id,subject,code,detail) VALUES (?,?,?,?)',(run,subject,code,code))
-            ev=grouped[subject];detail=json.dumps({'events':ev,'rules':config['rule_version'],'issues':issues[subject]},ensure_ascii=False)
+            ev=grouped[subject];detail=json.dumps({'events':ev,'event_ids':sorted(e['id'] for e in used_events[subject]),
+                                                   'rules':config['rule_version'],'issues':issues[subject]},ensure_ascii=False)
             db.execute('INSERT INTO evidence(run_id,subject,rule_id,detail) VALUES (?,?,?,?)',(run,subject,config['rule_version'],detail))
+            for event in used_events[subject]:
+                db.execute('INSERT INTO evidence(run_id,subject,source_id,event_id,rule_id,detail) VALUES (?,?,?,?,?,?)',
+                           (run,subject,event['source_id'],event['id'],config['rule_version'],'decision_input'))
             db.execute('INSERT INTO decision(run_id,subject,status,detail) VALUES (?,?,?,?)',(run,subject,status,detail))
         db.execute("UPDATE run SET status=CASE WHEN EXISTS(SELECT 1 FROM decision WHERE run_id=? AND status='证据不足') THEN '待核' ELSE '已判定' END,ended_at=CURRENT_TIMESTAMP WHERE id=?",(run,run))
     db.close();return decision
