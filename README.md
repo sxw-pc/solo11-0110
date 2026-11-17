@@ -2,6 +2,8 @@
 
 完全离线，输入与主体均为合成数据。`python -m pip install . --no-build-isolation` 安装；`python -m retaincase demo` 一条命令初始化 SQLite、导入 fixture、计算、生成 JSON/Markdown；`python -m pytest -q` 测试。
 
+`usage-register` 另行冻结留存对象的人员/设备进出扫描，`usage-summary` 只返回原始扫描、人员和设备数，不推断访问会话；这组分析日志不参与可销毁性、交接或删除请求。`fixtures/usage-scans.jsonl` 与 `tests/test_usage.py` 提供离线合成样例。
+
 数据流：SourceFile 原始字节及哈希 → RawEvent → Subject 与 RuleVersion → Run 内的 Decision、Evidence、Issue → 报告；身份冲突和坏行保留为 Issue。相同文件哈希与事件键幂等。
 
 状态：待接收→已校验→已判定/待核；决策和证据与运行状态事务提交。错误码包括 parse_error、identity_conflict、evidence_gap、rule_conflict、execution_failure。只操作显式沙箱。
