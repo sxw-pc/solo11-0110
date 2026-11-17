@@ -31,13 +31,19 @@ def open_case(db_path,recall_id,request_id,transfer_id):
     db=connect(db_path);db.executescript(HANDOFF_SCHEMA+REQUEST_SCHEMA+SCHEMA)
     request=db.execute('SELECT * FROM erasure_request WHERE id=?',(request_id,)).fetchone()
     transfer=db.execute('SELECT * FROM custody_transfer WHERE id=?',(transfer_id,)).fetchone()
-    if not request or not transfer or transfer['state']!='accepted':raise ValueError('accepted_transfer_and_request_required')
+    if not request or not transfer:raise ValueError('accepted_transfer_and_request_required')
     if request['run_id']!=transfer['run_id']:raise ValueError('recall_run_conflict')
     if db.execute('SELECT max(id) FROM run').fetchone()[0]!=request['run_id']:
         raise ValueError('recall_decision_stale')
+    # A recall reaches externally only for objects the recipient actually holds:
+    # remote_erase obligation AND an immutable 'received' receipt on this transfer.
+    # Objects still in local custody (pending/rejected) must never enter external proof.
     items=db.execute("""SELECT i.subject,c.expected_hash FROM erasure_item i
       JOIN custody_item c ON c.subject=i.subject AND c.transfer_id=?
-      WHERE i.request_id=? AND i.obligation='remote_erase' ORDER BY i.subject""",
+      WHERE i.request_id=? AND i.obligation='remote_erase'
+      AND EXISTS(SELECT 1 FROM custody_receipt r WHERE r.transfer_id=c.transfer_id
+        AND r.subject=i.subject AND r.verdict='received')
+      ORDER BY i.subject""",
       (transfer_id,request_id)).fetchall()
     if not items:raise ValueError('no_remote_obligation_for_transfer')
     old=db.execute('SELECT * FROM custody_recall WHERE id=?',(recall_id,)).fetchone()

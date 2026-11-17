@@ -17,6 +17,8 @@ def main():
     rf=sub.add_parser('request-fulfill');rf.add_argument('--db',required=True);rf.add_argument('--id',required=True)
     hp=sub.add_parser('handoff-prepare');hp.add_argument('--db',required=True);hp.add_argument('--id',required=True);hp.add_argument('--recipient',required=True);hp.add_argument('--subjects',required=True);hp.add_argument('--expires',required=True)
     ha=sub.add_parser('handoff-ack');ha.add_argument('--db',required=True);ha.add_argument('--id',required=True);ha.add_argument('--recipient',required=True);ha.add_argument('--hashes',required=True);ha.add_argument('--at',required=True)
+    hr=sub.add_parser('handoff-receive');hr.add_argument('--db',required=True);hr.add_argument('--id',required=True);hr.add_argument('--recipient',required=True);hr.add_argument('--event-key',required=True);hr.add_argument('--receipts',required=True);hr.add_argument('--at',required=True)
+    hi=sub.add_parser('handoff-inspect');hi.add_argument('--db',required=True);hi.add_argument('--id',required=True)
     ro=sub.add_parser('recall-open');ro.add_argument('--db',required=True);ro.add_argument('--id',required=True);ro.add_argument('--request',required=True);ro.add_argument('--transfer',required=True)
     rs=sub.add_parser('recall-submit');rs.add_argument('--db',required=True);rs.add_argument('--id',required=True);rs.add_argument('--recipient',required=True);rs.add_argument('--receipts',required=True)
     a=p.parse_args()
@@ -51,6 +53,13 @@ def main():
         import json
         from .handoff import acknowledge
         print(acknowledge(a.db,a.id,a.recipient,json.loads(Path(a.hashes).read_text(encoding='utf-8')),a.at))
+    elif a.command=='handoff-receive':
+        import json
+        from .handoff import receive
+        print(receive(a.db,a.id,a.recipient,a.event_key,json.loads(Path(a.receipts).read_text(encoding='utf-8')),a.at))
+    elif a.command=='handoff-inspect':
+        from .handoff import inspect
+        print(inspect(a.db,a.id))
     elif a.command=='recall-open':
         from .recall import open_case
         print(open_case(a.db,a.id,a.request,a.transfer))

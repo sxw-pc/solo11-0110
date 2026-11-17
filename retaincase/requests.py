@@ -29,8 +29,9 @@ def triage(db_path, request_id, subjects, due_at):
         raise ValueError('empty_or_duplicate_subjects')
     db = connect(db_path)
     db.executescript(SCHEMA)
-    from .handoff import SCHEMA as HANDOFF_SCHEMA
+    from .handoff import SCHEMA as HANDOFF_SCHEMA, object_custody, _backfill_legacy_accepted
     db.executescript(HANDOFF_SCHEMA)
+    _backfill_legacy_accepted(db)
     run = db.execute("SELECT * FROM run ORDER BY id DESC LIMIT 1").fetchone()
     if not run:
         raise ValueError('evaluate_first')
@@ -40,23 +41,26 @@ def triage(db_path, request_id, subjects, due_at):
     if old:
         if old['request_hash'] != digest:
             raise ValueError('request_identity_conflict')
+        db.close()
         return describe(db_path, request_id)
     lines = []
     for subject in ids:
         if not db.execute('SELECT 1 FROM subject WHERE id=? AND batch_id=?', (subject, batch['id'])).fetchone():
             raise ValueError(f'unknown_request_subject:{subject}')
         decision = db.execute('SELECT status,detail FROM decision WHERE run_id=? AND subject=?', (run['id'], subject)).fetchone()
-        transfers = db.execute("SELECT t.id FROM custody_transfer t JOIN custody_item i ON i.transfer_id=t.id WHERE i.subject=? AND t.state='accepted' ORDER BY t.id", (subject,)).fetchall()
-        transferred = transfers[0] if len(transfers)==1 else None
-        if len(transfers)>1 or not decision or decision['status'] == '证据不足':
+        # Custody is answered per object from immutable receipt evidence: objects never
+        # received (or only structurally rejected) stay local; whole-transfer state can
+        # never imply an object was handed off.
+        custody, custody_detail = object_custody(db, subject, run['id'])
+        if not decision or decision['status'] == '证据不足' or custody in ('disputed', 'investigate'):
             obligation = 'investigate'
-        elif transferred and decision['status'] == '可销毁':
+        elif custody == 'received' and decision['status'] == '可销毁':
             obligation = 'remote_erase'
         elif decision['status'] == '可销毁':
             obligation = 'erase'
         else:
             obligation = 'defer'
-        lines.append((subject, obligation, json.dumps({'run_id':run['id'], 'decision':dict(decision) if decision else None, 'custody_transfer': transferred['id'] if transferred else None, 'accepted_transfer_count':len(transfers)}, ensure_ascii=False)))
+        lines.append((subject, obligation, json.dumps({'run_id':run['id'], 'decision':dict(decision) if decision else None, 'custody':custody, 'custody_detail':custody_detail}, ensure_ascii=False)))
     kinds = {line[1] for line in lines}
     actionable={'erase','remote_erase'}
     state = 'uncertain' if 'investigate' in kinds else ('ready' if kinds<=actionable else ('deferred' if kinds == {'defer'} else 'partial'))

@@ -14,9 +14,17 @@
 
 `handoff-prepare --db DB --id T --recipient receiver-A --subjects D --expires 2099-01-01T00:00:00Z` 冻结接收人、运行和对象哈希；`handoff-ack --db DB --id T --recipient receiver-A --hashes hashes.json --at 2030-01-01T00:00:00Z` 对全部对象核验后产生接受、争议或过期结论。待删除义务阻断移交；已被接受的移交使后续可销毁对象的删除请求产生外部履约义务，多个有效交接则进入调查。`fixtures/operations.json` 给出正常、冲突和部分履约输入。两项子系统在同一 SQLite 控制库中留下可复核的独立记录。
 
+### 分批接收与逐对象保管证据
+
+整单确认无法表达"一个对象已由接收方持有、另一个尚未收到"。`handoff-receive --db DB --id T --recipient receiver-A --event-key EVT --receipts recv.json --at 2030-02-01T00:00:00Z` 让接收方按接收事件键提交本次**实际收到**的对象及哈希；`recv.json` 为 `[{"subject":"D","sha256":"..."}]`，未提交的对象保持本地保管，不能由整单状态推断已移交。每次尝试都在只增不改的 `custody_receipt` 表留下 `received`/`disputed`/`rejected` 证据与原因：同一事件原文重放幂等；事件键换内容报 `receive_event_identity_conflict`；对象不在冻结清单、哈希不符、接收人不符、裁决 run 已变化、交接已过期分别登记为可追查的拒绝或争议，且任何尝试都不能改写此前已确认对象。`handoff-inspect` 同时给出整体状态与逐对象的 `pending`/`received`/`disputed` 保管状态；到期不会抹掉实际接收证据。
+
+**晚到接收路线（已选定路线 A：冻结后拒绝接收）**：删除请求一旦冻结，覆盖对象上未履约的**本地 `erase` 义务**即锁定保管权——之后到达的接收事件登记为 `rejected/erasure_request_frozen`，本次请求仍由本地履约，须另开新交接；请求冻结前到达的接收正常登记为 `received`，冻结后该对象产生 `remote_erase`。替代路线（登记请求后争议、本地仍履约）未采用。`remote_erase` 对象已在外部，其替代交接的接收不受冻结守卫阻断，但两个交接都持有接收证据时删除请求进入 `investigate`。
+
+`triage` 在同一请求内逐对象读取保管状态：已收到且裁决可销毁为 `remote_erase`，未收到且可销毁为本地 `erase`，争议对象为 `investigate`；交接 D、E 只收到 D 时，请求结果即 D=`remote_erase`、E=`erase`。旧库中无逐对象证据的 `accepted` 交接在首次访问时按冻结清单一次性回填为遗留接收证据，历史删除请求的冻结义务不被重算。
+
 ## 接收方删除回执
 
-已接受交接且原裁决允许销毁时，后续删除请求产生 `remote_erase`，区别于本地 `erase`。`recall-open --db DB --id RC --request REQ --transfer T` 按交接与请求的交集冻结外部义务；`recall-submit --db DB --id RC --recipient receiver-A --receipts receipts.json` 逐对象核验交接哈希及接收方 HMAC 回执。控制库保存每次提交的原始摘要、通过或争议原因，以及 pending/partial/disputed/completed 状态。重复事件键不能改写原证明，错误回执不会覆盖已确认对象；只有整批回执完成，`request-fulfill` 才能把对应外部义务计入履约。`fixtures/recall-cases.json` 给出两对象正常、冲突与部分失败场景。接收方密钥在合成配置的 `custody_keys` 中；真实部署应改为独立保管的凭据。
+已实际收到（存在不可改写的 `received` 接收证据）且原裁决允许销毁时，删除请求对该对象产生 `remote_erase`，区别于本地 `erase`。`recall-open --db DB --id RC --request REQ --transfer T` 按交接与请求的交集冻结外部义务，且只纳入已收到对象；未收到对象不进入外部证明，仍须本地执行台账。`recall-submit --db DB --id RC --recipient receiver-A --receipts receipts.json` 逐对象核验交接哈希及接收方 HMAC 回执。控制库保存每次提交的原始摘要、通过或争议原因，以及 pending/partial/disputed/completed 状态。重复事件键不能改写原证明，错误回执不会覆盖已确认对象；只有整批回执完成，`request-fulfill` 才能把对应外部义务计入履约。`fixtures/recall-cases.json` 给出两对象正常、冲突与部分失败场景。接收方密钥在合成配置的 `custody_keys` 中；真实部署应改为独立保管的凭据。
 
 ## 裁决与销毁的一致性
 
