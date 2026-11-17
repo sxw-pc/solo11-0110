@@ -2,7 +2,26 @@ import hashlib,json
 from pathlib import Path
 from .store import connect
 from .timeline import instant
+EVENT_KINDS={'use','terminate','hold_start','hold_end','depends_on',
+             'jurisdiction_origin','jurisdiction_transfer'}
 def hash_bytes(raw):return hashlib.sha256(raw).hexdigest()
+def _validate(item):
+    """Structural checks for jurisdiction events before they become evidence."""
+    kind=item['kind']
+    if kind not in EVENT_KINDS:raise ValueError('unknown_event_kind')
+    if kind=='jurisdiction_origin':
+        if not isinstance(item.get('jurisdiction'),str) or not item['jurisdiction'].strip():
+            raise ValueError('origin_jurisdiction_required')
+    elif kind=='jurisdiction_transfer':
+        source,target=item.get('from_jurisdiction'),item.get('to_jurisdiction')
+        if not isinstance(source,str) or not source.strip():
+            raise ValueError('transfer_source_required')
+        if not isinstance(target,str) or not target.strip():
+            raise ValueError('transfer_target_required')
+        if source==target:raise ValueError('transfer_self_reference')
+        record=item.get('succession')
+        if record is not None and not isinstance(record,(dict,bool)):
+            raise ValueError('invalid_succession_record')
 def initialize(db_path,config_path):
     raw=Path(config_path).read_bytes();config=json.loads(raw);db=connect(db_path)
     bid=config['batch_id'];digest=hash_bytes(raw)
@@ -27,7 +46,7 @@ def load(db_path,path):
             try:
                 item=json.loads(line);key=str(item['event_key']);subject=str(item['subject']);kind=str(item['kind'])
                 if not db.execute('SELECT 1 FROM subject WHERE id=?',(subject,)).fetchone():raise ValueError('unknown_subject')
-                if kind not in {'use','terminate','hold_start','hold_end','depends_on'}:raise ValueError('unknown_event_kind')
+                _validate(item)
                 instant(item['at'])
                 digest=hash_bytes(line.encode());old=db.execute('SELECT digest FROM raw_event WHERE event_key=?',(key,)).fetchone()
                 if old:

@@ -1,0 +1,16 @@
+{
+  "batch_id": "retain-jurisdiction",
+  "rule_version": "jv1",
+  "as_of": "2026-06-01",
+  "jurisdiction_authority": "synthetic-jurisdiction-memo:J1-to-J2",
+  "jurisdictions": {
+    "J1": {"id": "J1-policy-2024", "start": "created", "days": 365,
+           "effective_from": "2024-01-01", "effective_until": "2027-01-01"},
+    "J2": {"id": "J2-policy-2025", "start": "terminated", "days": 30,
+           "effective_from": "2025-01-01", "effective_until": "2028-01-01"}
+  },
+  "subjects": {
+    "D": {"created": "2024-06-01", "path": "D.bin",
+          "sha256": "2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea"}
+  }
+}

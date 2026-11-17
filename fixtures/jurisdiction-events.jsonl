@@ -1,0 +1,4 @@
+{"event_key": "j1-origin", "subject": "D", "kind": "jurisdiction_origin", "jurisdiction": "J1", "at": "2025-06-15"}
+{"event_key": "j1-to-j2", "subject": "D", "kind": "jurisdiction_transfer", "from_jurisdiction": "J1", "to_jurisdiction": "J2", "succession": {"basis": "synthetic-escrow-agreement-7", "evidence": "succession-proof-7"}, "at": "2026-03-01"}
+{"event_key": "succession-proof-7", "subject": "D", "kind": "use", "jurisdiction": "J1", "at": "2025-12-01"}
+{"event_key": "j2-terminate", "subject": "D", "kind": "terminate", "at": "2026-04-15"}

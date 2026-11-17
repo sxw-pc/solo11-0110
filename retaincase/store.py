@@ -13,6 +13,22 @@ CREATE TABLE IF NOT EXISTS evidence(id INTEGER PRIMARY KEY, run_id INTEGER NOT N
 CREATE TABLE IF NOT EXISTS decision(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), subject TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL, UNIQUE(run_id,subject));
 CREATE TABLE IF NOT EXISTS execution(id INTEGER PRIMARY KEY, run_id INTEGER REFERENCES run(id), subject TEXT NOT NULL, action TEXT NOT NULL, before_hash TEXT, after_state TEXT NOT NULL, at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(subject,action,before_hash));
 CREATE TABLE IF NOT EXISTS plan(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS jurisdiction_policy(
+ id TEXT PRIMARY KEY, jurisdiction TEXT NOT NULL, effective_from TEXT NOT NULL, effective_until TEXT,
+ body TEXT NOT NULL, digest TEXT NOT NULL, UNIQUE(jurisdiction,effective_from));
+CREATE TABLE IF NOT EXISTS run_jurisdiction(
+ run_id INTEGER PRIMARY KEY REFERENCES run(id), contract TEXT NOT NULL, authority TEXT,
+ as_of TEXT NOT NULL, snapshot TEXT NOT NULL, snapshot_digest TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS jurisdiction_evidence(
+ id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), subject TEXT NOT NULL,
+ jurisdiction TEXT NOT NULL, applicability TEXT NOT NULL CHECK(applicability IN ('applied','excluded')),
+ basis TEXT NOT NULL, policy_id TEXT, policy_body TEXT, policy_digest TEXT,
+ effective_from TEXT, effective_until TEXT, start_kind TEXT, start_value TEXT,
+ start_event_id INTEGER REFERENCES raw_event(id), start_event_key TEXT,
+ expires_on TEXT, expired INTEGER, evidence_gap TEXT,
+ succession_event_id INTEGER REFERENCES raw_event(id), succession_event_key TEXT,
+ succession_basis TEXT, exclusion_basis TEXT, UNIQUE(run_id,subject,jurisdiction));
+CREATE INDEX IF NOT EXISTS jurisdiction_evidence_run ON jurisdiction_evidence(run_id,subject);
 """
 def connect(path):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
