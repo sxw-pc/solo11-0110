@@ -10,8 +10,23 @@ def export(db_path,out):
       'issues':[dict(x) for x in db.execute('SELECT * FROM issue WHERE run_id=? OR run_id IS NULL ORDER BY id',(rid,))],
       'evidence':[dict(x) for x in db.execute('SELECT * FROM evidence WHERE run_id=? ORDER BY id',(rid,))]}
     data['executions']=[dict(x) for x in db.execute('SELECT * FROM execution ORDER BY id')]
+    data['forecasts']=[{'forecast_run':dict(fr),
+                        'items':[dict(x) for x in db.execute('SELECT * FROM forecast WHERE forecast_run_id=? ORDER BY subject,contract',(fr['id'],))]}
+                       for fr in db.execute('SELECT * FROM forecast_run ORDER BY id')]
     out.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
-    md=out.with_suffix('.md');md.write_text('# 离线判定报告\n\n'+f'运行 {rid}：{run["status"]}\n\n'+'\n'.join(f'- {x["subject"]}: {x["status"]}，{x["detail"]}' for x in data['decisions']),encoding='utf-8')
+    lines=['# 离线判定报告','',f'运行 {rid}：{run["status"]}','']
+    lines+=[f'- {x["subject"]}: {x["status"]}，{x["detail"]}' for x in data['decisions']]
+    if data['forecasts']:
+        lines+=['','## 复核时点预报','','仅供保管员安排证据收集与人工复核，不构成可销毁授权。']
+        for block in data['forecasts']:
+            fr=block['forecast_run'];watermark=json.loads(fr['watermark'])
+            lines+=['',f'预报 {fr["id"]}（锚定运行 {fr["run_id"]}，规则 {fr["rule_version"]}，as_of {fr["as_of"]}，事件水位 {watermark["count"]} 条）']
+            for item in block['items']:
+                detail=json.loads(item['detail']);premises='；'.join(item['premises'] and json.loads(item['premises']) or []) or '无'
+                date=item['review_date'] or '—'
+                chain='、'.join(f"{e['child']}→{e['parent']}" for e in detail['dependency_chain']) or '无'
+                lines.append(f'- {item["subject"]} [{detail["contract_label"]}]: {item["level"]}，复核日 {date}，前提：{premises}，依赖链：{chain}')
+    md=out.with_suffix('.md');md.write_text('\n'.join(lines)+'\n',encoding='utf-8')
     db.close();return out
 def verify(db_path):
     db=connect(db_path);problems=[]

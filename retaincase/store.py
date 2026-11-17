@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS evidence(id INTEGER PRIMARY KEY, run_id INTEGER NOT N
 CREATE TABLE IF NOT EXISTS decision(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), subject TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL, UNIQUE(run_id,subject));
 CREATE TABLE IF NOT EXISTS execution(id INTEGER PRIMARY KEY, run_id INTEGER REFERENCES run(id), subject TEXT NOT NULL, action TEXT NOT NULL, before_hash TEXT, after_state TEXT NOT NULL, at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(subject,action,before_hash));
 CREATE TABLE IF NOT EXISTS plan(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS forecast_run(id INTEGER PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES batch(id), run_id INTEGER REFERENCES run(id), as_of TEXT NOT NULL, rule_version TEXT NOT NULL, config_hash TEXT NOT NULL, watermark TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS forecast(id INTEGER PRIMARY KEY, forecast_run_id INTEGER NOT NULL REFERENCES forecast_run(id), subject TEXT NOT NULL, contract TEXT NOT NULL, level TEXT NOT NULL, review_date TEXT, premises TEXT NOT NULL, detail TEXT NOT NULL, UNIQUE(forecast_run_id,subject,contract));
 """
 def connect(path):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)

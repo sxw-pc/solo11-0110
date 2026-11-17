@@ -5,17 +5,29 @@ from .store import connect
 from .timeline import instant,utc_day
 
 def _config(db):return json.loads(db.execute('SELECT config_raw FROM batch LIMIT 1').fetchone()[0])
-def evaluate(path):
-    db=connect(path);config=_config(db);events=[dict(r) for r in db.execute('SELECT * FROM raw_event ORDER BY at,id')]
+def subject_events(config,events):
+    """每个主体的判定事件视图：自身事件合并按标签匹配的保全事件，排序与 evaluate 一致。
+
+    forecast 复用同一视图，保证起点、保全、依赖证据的变化对裁决与预报因果一致。
+    返回 (merged, grouped)：merged 已排序并含标签保全事件，grouped 仅按主体原始分组。
+    """
+    asof=instant(config['as_of'])
+    all_events=[json.loads(e['payload']) for e in events]
     grouped={s:[] for s in config['subjects']}
     for e in events:grouped[e['subject']].append(json.loads(e['payload']))
+    merged={}
+    for subject,spec in config['subjects'].items():
+        ev=grouped[subject]+[e for e in all_events if e.get('scope_tag') in spec.get('tags',[]) and e['subject']!=subject and e['kind'] in ('hold_start','hold_end')]
+        merged[subject]=sorted(ev,key=lambda e:(instant(e['at']) if e.get('at') else asof,e['event_key']))
+    return merged,grouped
+def evaluate(path):
+    db=connect(path);config=_config(db);events=[dict(r) for r in db.execute('SELECT * FROM raw_event ORDER BY at,id')]
     asof=instant(config['as_of']);decision={};issues={};dependencies={}
-    all_events=[json.loads(e['payload']) for e in events]
+    merged,grouped=subject_events(config,events)
     event_by_key={json.loads(e['payload'])['event_key']:e for e in events}
     used_events={}
     for subject,spec in config['subjects'].items():
-        ev=grouped[subject]+[e for e in all_events if e.get('scope_tag') in spec.get('tags',[]) and e['subject']!=subject and e['kind'] in ('hold_start','hold_end')]
-        ev=sorted(ev,key=lambda e:(instant(e['at']) if e.get('at') else asof,e['event_key']))
+        ev=merged[subject]
         used_events[subject]=[event_by_key[e['event_key']] for e in ev]
         codes=[];start_kind=config['policy'][spec['category']]['start']
         if start_kind=='created':start=spec.get('created')
