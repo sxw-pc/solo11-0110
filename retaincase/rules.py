@@ -1,12 +1,27 @@
-import json,hashlib
-from datetime import date,timedelta
+import json,hashlib,tempfile,sqlite3
+from datetime import timedelta
 from pathlib import Path
 from .store import connect
 from .timeline import instant,utc_day
 
 def _config(db):return json.loads(db.execute('SELECT config_raw FROM batch LIMIT 1').fetchone()[0])
-def evaluate(path):
-    db=connect(path);config=_config(db);events=[dict(r) for r in db.execute('SELECT * FROM raw_event ORDER BY at,id')]
+
+def input_digest(config_hash,event_watermark,membership):
+    """Canonical digest of the exact decision inputs: frozen policy bytes + event
+    high-water mark + per-subject participating event identity."""
+    payload={'config_hash':config_hash,'event_watermark':event_watermark,
+             'membership':{s:sorted(ids) for s,ids in sorted(membership.items())}}
+    return hashlib.sha256(json.dumps(payload,sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest()
+
+def compute_decisions(config,events):
+    """Pure rule engine.
+
+    ``events`` are raw_event rows (dicts including id/source_id/line_no) ordered
+    by (at,id). Only the rows passed in participate, so a frozen watermark can be
+    recomputed without any event ingested afterwards.
+    Returns decision status, issue codes, participating rows per subject and the
+    dependency edge list -- nothing here reads or writes a database.
+    """
     grouped={s:[] for s in config['subjects']}
     for e in events:grouped[e['subject']].append(json.loads(e['payload']))
     asof=instant(config['as_of']);decision={};issues={};dependencies={}
@@ -71,20 +86,107 @@ def evaluate(path):
                 added=[e for e in used_events[child] if e['id'] not in known]
                 if added:used_events[parent].extend(added);changed=True
         if not changed:break
-    with db:
-        run=db.execute("INSERT INTO run(batch_id,status) VALUES (?, '待接收')",(config['batch_id'],)).lastrowid
-        db.execute("UPDATE run SET status='已校验' WHERE id=?",(run,))
-        for subject,status in decision.items():
-            for code in sorted(set(issues[subject])):db.execute('INSERT INTO issue(run_id,subject,code,detail) VALUES (?,?,?,?)',(run,subject,code,code))
-            ev=grouped[subject];detail=json.dumps({'events':ev,'event_ids':sorted(e['id'] for e in used_events[subject]),
-                                                   'rules':config['rule_version'],'issues':issues[subject]},ensure_ascii=False)
-            db.execute('INSERT INTO evidence(run_id,subject,rule_id,detail) VALUES (?,?,?,?)',(run,subject,config['rule_version'],detail))
-            for event in used_events[subject]:
-                db.execute('INSERT INTO evidence(run_id,subject,source_id,event_id,rule_id,detail) VALUES (?,?,?,?,?,?)',
-                           (run,subject,event['source_id'],event['id'],config['rule_version'],'decision_input'))
-            db.execute('INSERT INTO decision(run_id,subject,status,detail) VALUES (?,?,?,?)',(run,subject,status,detail))
-        db.execute("UPDATE run SET status=CASE WHEN EXISTS(SELECT 1 FROM decision WHERE run_id=? AND status='证据不足') THEN '待核' ELSE '已判定' END,ended_at=CURRENT_TIMESTAMP WHERE id=?",(run,run))
-    db.close();return decision
+    membership={s:[e['id'] for e in rows] for s,rows in used_events.items() if rows}
+    edges=sorted((child,parent) for child,parents in dependencies.items() for parent in parents)
+    return {'decision':decision,'issues':{s:sorted(set(c)) for s,c in issues.items()},
+            'used_events':used_events,'membership':membership,'dependency_edges':edges}
+
+def _persist_run(db,config,result):
+    """Write run/issue/evidence/decision plus the frozen inputs in one transaction."""
+    run=db.execute("INSERT INTO run(batch_id,status) VALUES (?, '待接收')",(config['batch_id'],)).lastrowid
+    db.execute("UPDATE run SET status='已校验' WHERE id=?",(run,))
+    participating={i for ids in result['membership'].values() for i in ids}
+    grouped={s:[] for s in config['subjects']}
+    for e in db.execute('SELECT * FROM raw_event ORDER BY at,id'):
+        if e['id'] in participating:
+            grouped[e['subject']].append(json.loads(e['payload']))
+    for subject,status in result['decision'].items():
+        for code in result['issues'][subject]:
+            db.execute('INSERT INTO issue(run_id,subject,code,detail) VALUES (?,?,?,?)',(run,subject,code,code))
+        ev=grouped[subject];detail=json.dumps({'events':ev,'event_ids':sorted(e['id'] for e in result['used_events'][subject]),
+                                               'rules':config['rule_version'],'issues':result['issues'][subject]},ensure_ascii=False)
+        db.execute('INSERT INTO evidence(run_id,subject,rule_id,detail) VALUES (?,?,?,?)',(run,subject,config['rule_version'],detail))
+        for event in result['used_events'][subject]:
+            db.execute('INSERT INTO evidence(run_id,subject,source_id,event_id,rule_id,detail) VALUES (?,?,?,?,?,?)',
+                       (run,subject,event['source_id'],event['id'],config['rule_version'],'decision_input'))
+        db.execute('INSERT INTO decision(run_id,subject,status,detail) VALUES (?,?,?,?)',(run,subject,status,detail))
+    # Freeze the exact inputs this run was derived from: policy bytes, the raw
+    # event high-water mark actually evaluated, and every event each subject
+    # participated in (including dependency-propagated source rows).
+    config_raw=db.execute('SELECT config_raw,config_hash FROM batch WHERE id=?',(config['batch_id'],)).fetchone()
+    watermark=db.execute('SELECT max(id) FROM raw_event').fetchone()[0]
+    watermark=watermark or 0
+    digest=input_digest(config_raw['config_hash'],watermark,result['membership'])
+    db.execute('INSERT INTO run_input(run_id,config_hash,config_raw,event_watermark,input_digest) VALUES (?,?,?,?,?)',
+               (run,config_raw['config_hash'],config_raw['config_raw'],watermark,digest))
+    for subject,ids in sorted(result['membership'].items()):
+        for event_id in sorted(ids):
+            row=db.execute('SELECT source_id,line_no FROM raw_event WHERE id=?',(event_id,)).fetchone()
+            db.execute('INSERT INTO run_input_event(run_id,subject,event_id,source_id,line_no) VALUES (?,?,?,?,?)',
+                       (run,subject,event_id,row['source_id'],row['line_no']))
+    db.execute("UPDATE run SET status=CASE WHEN EXISTS(SELECT 1 FROM decision WHERE run_id=? AND status='证据不足') THEN '待核' ELSE '已判定' END,ended_at=CURRENT_TIMESTAMP WHERE id=?",(run,run))
+    return run
+
+def evaluate(path):
+    db=connect(path);config=_config(db)
+    events=[dict(r) for r in db.execute('SELECT * FROM raw_event ORDER BY at,id')]
+    result=compute_decisions(config,events)
+    with db:_persist_run(db,config,result)
+    db.close();return result['decision']
+
+def recompute_frozen(db_path,run_id,*,mode):
+    """Recompute a run's conclusions in an isolated copy from frozen inputs.
+
+    mode='frozen' uses only the policy bytes and event watermark captured by the
+    run, so later ingested events or policy revisions cannot leak into history.
+    mode='current' uses the present full event set and present policy bytes --
+    the input for the current-usability contract, never a historical proof.
+    Does not write anything to the source database.
+    """
+    if mode not in ('frozen','current'):raise ValueError('unknown_recompute_mode')
+    source=connect(db_path)
+    run=source.execute('SELECT * FROM run WHERE id=?',(run_id,)).fetchone()
+    if not run:
+        source.close();raise ValueError('unknown_run')
+    frozen=source.execute('SELECT * FROM run_input WHERE run_id=?',(run_id,)).fetchone()
+    if mode=='frozen' and not frozen:
+        source.close()
+        return {'mode':mode,'run_id':run_id,'available':False,
+                'reason':'no_frozen_input','decision':{},'issues':{},
+                'membership':{},'dependency_edges':[],'config_hash':None,
+                'event_watermark':None,'input_digest':None}
+    with tempfile.TemporaryDirectory() as tmp:
+        copy=Path(tmp)/'recheck.db'
+        other=sqlite3.connect(copy)
+        source.backup(other)
+        other.close();source.close()
+        db=connect(copy)
+        if mode=='frozen':
+            config=json.loads(frozen['config_raw'])
+            events=[dict(r) for r in db.execute(
+                'SELECT * FROM raw_event WHERE id<=? ORDER BY at,id',(frozen['event_watermark'],))]
+            frozen_membership={}
+            for row in db.execute('SELECT subject,event_id FROM run_input_event WHERE run_id=? ORDER BY subject,event_id',(run_id,)):
+                frozen_membership.setdefault(row['subject'],[]).append(row['event_id'])
+            result=compute_decisions(config,events)
+            result.update({'mode':mode,'run_id':run_id,'available':True,
+                           'config_hash':frozen['config_hash'],
+                           'event_watermark':frozen['event_watermark'],
+                           'input_digest':frozen['input_digest'],
+                           'stored_input_digest':input_digest(
+                               frozen['config_hash'],frozen['event_watermark'],frozen_membership),
+                           'frozen_membership':{s:sorted(ids) for s,ids in frozen_membership.items()}})
+        else:
+            batch=db.execute('SELECT config_raw,config_hash FROM batch WHERE id=?',(run['batch_id'],)).fetchone()
+            config=json.loads(batch['config_raw'])
+            events=[dict(r) for r in db.execute('SELECT * FROM raw_event ORDER BY at,id')]
+            result=compute_decisions(config,events)
+            result.update({'mode':mode,'run_id':run_id,'available':True,
+                           'config_hash':batch['config_hash'],
+                           'event_watermark':db.execute('SELECT max(id) FROM raw_event').fetchone()[0] or 0,
+                           'input_digest':None})
+        db.close()
+    return result
 
 def action(command,path,sandbox=None,out=None):
     db=connect(path);config=_config(db)
@@ -153,10 +255,22 @@ def action(command,path,sandbox=None,out=None):
             done.append(item['subject'])
         db.close();return done
     raise ValueError('unsupported_action')
+
 def verify_decisions(path):
-    import tempfile,sqlite3
-    db=connect(path);old={r['subject']:r['status'] for r in db.execute('SELECT subject,status FROM decision WHERE run_id=(SELECT max(id) FROM run)')}
-    with tempfile.TemporaryDirectory() as tmp:
-        copy=Path(tmp)/'check.db';other=sqlite3.connect(copy);db.backup(other);other.close()
-        computed=evaluate(copy)
-    db.close();return [f'decision_mismatch:{k}' for k in old.keys()|computed.keys() if old.get(k)!=computed.get(k)]
+    """Independent re-derivation of the latest run from that run's own frozen
+    inputs in an isolated copy. Runs predating freeze support cannot be
+    re-derived and are reported rather than silently checked against present
+    state."""
+    db=connect(path)
+    latest=db.execute('SELECT max(id) FROM run').fetchone()[0]
+    db.close()
+    if latest is None:return []
+    try:
+        result=recompute_frozen(path,latest,mode='frozen')
+    except (ValueError,KeyError,json.JSONDecodeError):
+        return [f'run_input_chain_tampered:{latest}']
+    if not result['available']:return [f'unverifiable_run:{latest}:no_frozen_input']
+    live=connect(path)
+    old={r['subject']:r['status'] for r in live.execute('SELECT subject,status FROM decision WHERE run_id=?',(latest,))}
+    live.close()
+    return [f'decision_mismatch:{k}' for k in old.keys()|result['decision'].keys() if old.get(k)!=result['decision'].get(k)]

@@ -13,6 +13,28 @@ CREATE TABLE IF NOT EXISTS evidence(id INTEGER PRIMARY KEY, run_id INTEGER NOT N
 CREATE TABLE IF NOT EXISTS decision(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), subject TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL, UNIQUE(run_id,subject));
 CREATE TABLE IF NOT EXISTS execution(id INTEGER PRIMARY KEY, run_id INTEGER REFERENCES run(id), subject TEXT NOT NULL, action TEXT NOT NULL, before_hash TEXT, after_state TEXT NOT NULL, at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(subject,action,before_hash));
 CREATE TABLE IF NOT EXISTS plan(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS run_input(
+ run_id INTEGER PRIMARY KEY REFERENCES run(id),
+ config_hash TEXT NOT NULL,
+ config_raw BLOB NOT NULL,
+ event_watermark INTEGER NOT NULL,
+ input_digest TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS run_input_event(
+ id INTEGER PRIMARY KEY,
+ run_id INTEGER NOT NULL REFERENCES run(id),
+ subject TEXT NOT NULL,
+ event_id INTEGER NOT NULL REFERENCES raw_event(id),
+ source_id INTEGER NOT NULL,
+ line_no INTEGER NOT NULL,
+ UNIQUE(run_id,subject,event_id));
+CREATE TABLE IF NOT EXISTS run_verification(
+ id INTEGER PRIMARY KEY,
+ run_id INTEGER NOT NULL REFERENCES run(id),
+ contract TEXT NOT NULL CHECK(contract IN ('historical','current')),
+ verdict TEXT NOT NULL CHECK(verdict IN ('verified','history_distorted','stale','unverifiable')),
+ input_digest TEXT,
+ detail TEXT NOT NULL,
+ at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
 """
 def connect(path):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
