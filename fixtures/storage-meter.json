@@ -1,0 +1,9 @@
+{
+  "period": "2026-06",
+  "first_tier_bytes": 100,
+  "tariff_cents_per_byte": [2, 1],
+  "blobs": [
+    {"blob_id": "X", "subject": "A", "bytes": 100, "matters": ["M1", "M2"]},
+    {"blob_id": "Y", "subject": "B", "bytes": 100, "matters": ["M2"]}
+  ]
+}
