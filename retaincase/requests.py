@@ -69,7 +69,16 @@ def triage(db_path, request_id, subjects, due_at):
     return describe(db_path, request_id)
 
 def fulfill(db_path, request_id):
-    """A missing file is not proof of erasure; require the execution ledger."""
+    """A missing file is not proof of erasure; require durable ledger evidence.
+
+    Local ``erase`` obligations are satisfied only by a final destruction proof
+    that belongs to a completed, recoverable execution attempt for the current
+    run and the same plan/object identity.  Legacy single-file ``execution``
+    rows remain accepted for backwards compatibility, but isolation in progress
+    is never treated as fulfilment: it is surfaced separately so an interrupted
+    attempt (file removed, proof not yet committed) cannot masquerade as done.
+    Remote obligations keep their existing receipt-based mechanism.
+    """
     db = connect(db_path); db.executescript(SCHEMA)
     request = db.execute('SELECT * FROM erasure_request WHERE id=?', (request_id,)).fetchone()
     if not request:
@@ -80,15 +89,50 @@ def fulfill(db_path, request_id):
     items = db.execute('SELECT * FROM erasure_item WHERE request_id=?', (request_id,)).fetchall()
     from .recall import SCHEMA as RECALL_SCHEMA
     db.executescript(RECALL_SCHEMA)
-    missing = [r['subject'] for r in items if r['obligation']=='erase' and not db.execute(
-        "SELECT 1 FROM execution WHERE subject=? AND action='destroy' AND run_id=?", (r['subject'],latest)).fetchone()]
+    from . import execution
+    missing = []
+    pending = []
+    disputed = []
+    fulfilled_legacy = []
+    for r in items:
+        if r['obligation'] != 'erase':
+            continue
+        subject = r['subject']
+        states = execution.subject_attempt_states(db_path, latest, subject)
+        if states:
+            # New-protocol evidence is authoritative for this object.  A legacy
+            # mirror row (or any legacy row) must never stand in for a missing
+            # new-protocol proof.
+            if execution.destruction_proofs(db_path, latest, subject):
+                continue
+            if any(state in ('quarantining', 'quarantined', 'disposing', 'restoring')
+                   for state in states):
+                pending.append(subject)
+            elif any(state == 'disputed' for state in states):
+                disputed.append(subject)
+            else:
+                missing.append(subject)
+            continue
+        # Legacy deployments have no attempts at all; their single-file rows
+        # remain acceptable evidence for backwards compatibility.
+        legacy = db.execute(
+            "SELECT 1 FROM execution WHERE subject=? AND action='destroy' AND run_id=?",
+            (subject, latest)).fetchone()
+        if legacy:
+            fulfilled_legacy.append(subject)
+        else:
+            missing.append(subject)
     missing_remote=[r['subject'] for r in items if r['obligation']=='remote_erase' and not db.execute(
         """SELECT 1 FROM custody_recall c JOIN recall_item i ON i.recall_id=c.id
            WHERE c.request_id=? AND c.run_id=? AND c.state='completed'
            AND i.subject=? AND i.state='confirmed'""",(request_id,latest,r['subject'])).fetchone()]
-    if missing or missing_remote:
-        db.close();return {'request':request_id,'state':request['state'],
+    if missing or pending or disputed or missing_remote:
+        db.close();result={'request':request_id,'state':request['state'],
                            'missing_execution':missing,'missing_remote_receipt':missing_remote}
+        if pending:result['pending_local_execution']=pending
+        if disputed:result['disputed_execution']=disputed
+        if fulfilled_legacy:result['legacy_execution']=fulfilled_legacy
+        return result
     state = 'fulfilled' if all(r['obligation'] in ('erase','remote_erase') for r in items) else request['state']
     with db:
         db.execute('UPDATE erasure_request SET state=? WHERE id=?', (state,request_id))

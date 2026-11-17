@@ -40,6 +40,10 @@ def prepare(db_path, transfer_id, recipient, subjects, expires_at):
         if not decision or decision['status']=='证据不足': raise ValueError(f'cannot_transfer_uncertain:{subject}')
         if db.execute("SELECT 1 FROM execution WHERE subject=? AND action='destroy'",(subject,)).fetchone():
             raise ValueError(f'already_destroyed:{subject}')
+        from .execution import blocked_subject
+        if blocked_subject(db_path,subject):
+            # Local isolation in progress is not a way around remote custody.
+            raise ValueError(f'local_execution_in_progress:{subject}')
         expected=config['subjects'][subject].get('sha256','')
         if not expected: raise ValueError(f'object_hash_required:{subject}')
         items.append((subject,decision['status'],expected))

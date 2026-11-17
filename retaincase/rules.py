@@ -86,8 +86,10 @@ def evaluate(path):
         db.execute("UPDATE run SET status=CASE WHEN EXISTS(SELECT 1 FROM decision WHERE run_id=? AND status='证据不足') THEN '待核' ELSE '已判定' END,ended_at=CURRENT_TIMESTAMP WHERE id=?",(run,run))
     db.close();return decision
 
-def action(command,path,sandbox=None,out=None):
-    db=connect(path);config=_config(db)
+def action(command,path,sandbox=None,out=None,recovery_policy='complete_on_recovery',
+           injector=None,attempt=None,nonce=''):
+    db=connect(path)
+    config=_config(db) if command!='recover' else None
     if command=='recheck':
         if out:
             raw=Path(out).read_bytes();new=json.loads(raw)
@@ -121,37 +123,18 @@ def action(command,path,sandbox=None,out=None):
             db.execute('INSERT OR IGNORE INTO plan(run_id,digest,body) VALUES ((SELECT max(id) FROM run),?,?)',(digest,body))
         destination.write_text(body,encoding='utf-8');db.close();return str(destination)
     if command=='execute':
+        db.close()
         if not sandbox:raise ValueError('sandbox_required')
-        root=Path(sandbox).resolve();root.mkdir(parents=True,exist_ok=True)
-        frozen=db.execute('SELECT config_raw,config_hash FROM batch WHERE id=?',(config['batch_id'],)).fetchone()
-        if hashlib.sha256(frozen['config_raw']).hexdigest()!=frozen['config_hash']:
-            raise ValueError('batch_config_tampered')
-        body=Path(out or 'plan.json').read_text(encoding='utf-8')
-        digest=hashlib.sha256(body.encode('utf-8')).hexdigest()
-        latest=db.execute('SELECT max(id) FROM run').fetchone()[0]
-        if not db.execute('SELECT 1 FROM plan WHERE digest=? AND run_id=? AND body=?',(digest,latest,body)).fetchone():
-            raise ValueError('plan_not_authorized_for_latest_run')
-        plan=json.loads(body);done=[]
-        eligible={r['subject'] for r in db.execute("SELECT subject FROM decision WHERE run_id=? AND status='可销毁'",(latest,))}
-        if {item['subject'] for item in plan}!=eligible or len(plan)!=len(eligible):
-            raise ValueError('plan_decision_mismatch')
-        for item in plan:
-            spec=config['subjects'].get(item['subject'])
-            if not spec or item['path']!=spec['path'] or item['sha256']!=spec.get('sha256',''):
-                raise ValueError('plan_config_mismatch')
-        for item in plan:
-            target=(root/item['path']).resolve()
-            if root not in target.parents:raise ValueError('unsafe_path')
-            if not target.exists():
-                if db.execute('SELECT 1 FROM execution WHERE subject=? AND action=? AND before_hash=?',(item['subject'],'destroy',item['sha256'])).fetchone():continue
-                raise ValueError('target_missing')
-            raw=target.read_bytes()
-            digest=hashlib.sha256(raw).hexdigest()
-            if not item['sha256'] or digest!=item['sha256']:raise ValueError('hash_changed')
-            target.unlink()
-            with db:db.execute('INSERT OR IGNORE INTO execution(run_id,subject,action,before_hash,after_state) VALUES ((SELECT max(id) FROM run),?,?,?,?)',(item['subject'],'destroy',digest,'absent'))
-            done.append(item['subject'])
-        db.close();return done
+        from .execution import execute as _execute
+        result=_execute(path,out,sandbox,recovery_policy=recovery_policy,injector=injector,nonce=nonce)
+        # Preserve the historical return contract: subjects destroyed by this
+        # call (idempotent replays report an empty list).
+        return result.get('newly_destroyed',[])
+    if command=='recover':
+        db.close()
+        from .execution import recover as _recover
+        if not sandbox and not attempt:raise ValueError('sandbox_or_attempt_required')
+        return _recover(path,attempt_id=attempt,sandbox=sandbox,injector=injector)
     raise ValueError('unsupported_action')
 def verify_decisions(path):
     import tempfile,sqlite3

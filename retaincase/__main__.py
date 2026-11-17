@@ -13,6 +13,9 @@ def main():
     v=sub.add_parser('verify');v.add_argument('--db',required=True);v.add_argument('--sandbox');v.add_argument('--out')
     for name in ('plan','execute','recheck'):
         x=sub.add_parser(name);x.add_argument('--db',required=True);x.add_argument('--sandbox');x.add_argument('--out')
+    ex=sub.choices['execute'];ex.add_argument('--recovery-policy',dest='recovery_policy',default='complete_on_recovery',choices=['complete_on_recovery','restore_on_recovery']);ex.add_argument('--nonce',default='')
+    rc=sub.add_parser('recover');rc.add_argument('--db',required=True);rc.add_argument('--sandbox');rc.add_argument('--attempt')
+    va=sub.add_parser('verify-attempt');va.add_argument('--db',required=True);va.add_argument('--attempt',required=True)
     rq=sub.add_parser('request-triage');rq.add_argument('--db',required=True);rq.add_argument('--id',required=True);rq.add_argument('--subjects',required=True);rq.add_argument('--due',required=True)
     rf=sub.add_parser('request-fulfill');rf.add_argument('--db',required=True);rf.add_argument('--id',required=True)
     hp=sub.add_parser('handoff-prepare');hp.add_argument('--db',required=True);hp.add_argument('--id',required=True);hp.add_argument('--recipient',required=True);hp.add_argument('--subjects',required=True);hp.add_argument('--expires',required=True)
@@ -29,15 +32,41 @@ def main():
     elif a.command=='report':print(export(a.db,a.out))
     elif a.command=='verify':
         from . import rules
+        from . import execution as execution_mod
         checks=verify(a.db)
         if hasattr(rules,'verify_decisions'):checks+=rules.verify_decisions(a.db)
         target=rules.verify_target(a.db,a.sandbox) if a.sandbox and hasattr(rules,'verify_target') else []
+        attempts=[]
+        try:
+            con=__import__('sqlite3').connect(a.db);con.row_factory=__import__('sqlite3').Row
+            ids=[r['id'] for r in con.execute('SELECT id FROM execution_attempt ORDER BY created_at,id')]
+            con.close()
+        except Exception:
+            ids=[]
+        for aid in ids:
+            problems=execution_mod.verify(a.db,aid)
+            attempts.append({'attempt':aid,'integrity_problems':problems})
+            checks+=['attempt:'+x for x in problems]
         if a.out:
             import json
             out=Path(a.out);out.parent.mkdir(parents=True,exist_ok=True)
-            out.write_text(json.dumps({'integrity_problems':checks,'target':target},ensure_ascii=False,indent=2),encoding='utf-8')
+            out.write_text(json.dumps({'integrity_problems':checks,'target':target,'attempts':attempts},ensure_ascii=False,indent=2),encoding='utf-8')
             out.with_suffix('.md').write_text('# 独立对账\n\n'+'\n'.join(f'- {x}' for x in target),encoding='utf-8')
-        print({'integrity_problems':checks,'target':target})
+        print({'integrity_problems':checks,'target':target,'attempts':attempts})
+    elif a.command=='execute':
+        from .execution import execute as execute_attempt
+        import json
+        result=execute_attempt(a.db,a.out,a.sandbox,recovery_policy=a.recovery_policy,nonce=a.nonce)
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+    elif a.command=='recover':
+        from .execution import recover
+        import json
+        result=recover(a.db,attempt_id=a.attempt,sandbox=a.sandbox)
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+    elif a.command=='verify-attempt':
+        from .execution import verify as verify_attempt
+        import json
+        print(json.dumps({'attempt':a.attempt,'integrity_problems':verify_attempt(a.db,a.attempt)},ensure_ascii=False,indent=2))
     elif a.command=='request-triage':
         from .requests import triage
         print(triage(a.db,a.id,a.subjects.split(','),a.due))

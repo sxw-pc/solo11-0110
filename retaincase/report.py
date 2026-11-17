@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 from .store import connect
+def _execution_view(row):
+    """Legacy execution rows remain visible, but explicitly not recoverable."""
+    item=dict(row);item['protocol']='legacy';item['recoverable']=False;return item
 def export(db_path,out):
     db=connect(db_path);out=Path(out);out.parent.mkdir(parents=True,exist_ok=True)
     run=db.execute('SELECT * FROM run ORDER BY id DESC LIMIT 1').fetchone()
@@ -9,7 +12,8 @@ def export(db_path,out):
       'decisions':[dict(x) for x in db.execute('SELECT * FROM decision WHERE run_id=? ORDER BY subject',(rid,))],
       'issues':[dict(x) for x in db.execute('SELECT * FROM issue WHERE run_id=? OR run_id IS NULL ORDER BY id',(rid,))],
       'evidence':[dict(x) for x in db.execute('SELECT * FROM evidence WHERE run_id=? ORDER BY id',(rid,))]}
-    data['executions']=[dict(x) for x in db.execute('SELECT * FROM execution ORDER BY id')]
+    data['executions']=[_execution_view(x) for x in db.execute('SELECT * FROM execution ORDER BY id')]
+    data['execution_attempts']=[dict(x) for x in db.execute('SELECT * FROM execution_attempt ORDER BY created_at,id')]
     out.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding='utf-8')
     md=out.with_suffix('.md');md.write_text('# 离线判定报告\n\n'+f'运行 {rid}：{run["status"]}\n\n'+'\n'.join(f'- {x["subject"]}: {x["status"]}，{x["detail"]}' for x in data['decisions']),encoding='utf-8')
     db.close();return out
