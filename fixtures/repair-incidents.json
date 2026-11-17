@@ -1,0 +1,11 @@
+{
+  "incidents": [
+    {"incident_id": "gap-A", "subject": "A", "stage": "source-extract"},
+    {"incident_id": "gap-B", "subject": "B", "stage": "source-extract"}
+  ],
+  "options": [
+    {"option_id": "replay-F1", "cost_cents": 300, "covers": ["gap-A"]},
+    {"option_id": "rebuild-shared-stage", "cost_cents": 800, "covers": ["gap-A", "gap-B"]},
+    {"option_id": "replay-F3", "cost_cents": 300, "covers": ["gap-B"]}
+  ]
+}

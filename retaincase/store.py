@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS evidence(id INTEGER PRIMARY KEY, run_id INTEGER NOT N
 CREATE TABLE IF NOT EXISTS decision(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), subject TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL, UNIQUE(run_id,subject));
 CREATE TABLE IF NOT EXISTS execution(id INTEGER PRIMARY KEY, run_id INTEGER REFERENCES run(id), subject TEXT NOT NULL, action TEXT NOT NULL, before_hash TEXT, after_state TEXT NOT NULL, at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(subject,action,before_hash));
 CREATE TABLE IF NOT EXISTS plan(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS repair_batch(id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES batch(id), source_hash TEXT NOT NULL, raw BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS repair_incident(batch_id TEXT NOT NULL REFERENCES repair_batch(id), incident_id TEXT NOT NULL, subject TEXT NOT NULL REFERENCES subject(id), stage TEXT NOT NULL, PRIMARY KEY(batch_id,incident_id));
+CREATE TABLE IF NOT EXISTS repair_option(batch_id TEXT NOT NULL REFERENCES repair_batch(id), option_id TEXT NOT NULL, cost_cents INTEGER NOT NULL, covers_json TEXT NOT NULL, PRIMARY KEY(batch_id,option_id));
 """
 def connect(path):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)

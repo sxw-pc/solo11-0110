@@ -19,6 +19,8 @@ def main():
     ha=sub.add_parser('handoff-ack');ha.add_argument('--db',required=True);ha.add_argument('--id',required=True);ha.add_argument('--recipient',required=True);ha.add_argument('--hashes',required=True);ha.add_argument('--at',required=True)
     ro=sub.add_parser('recall-open');ro.add_argument('--db',required=True);ro.add_argument('--id',required=True);ro.add_argument('--request',required=True);ro.add_argument('--transfer',required=True)
     rs=sub.add_parser('recall-submit');rs.add_argument('--db',required=True);rs.add_argument('--id',required=True);rs.add_argument('--recipient',required=True);rs.add_argument('--receipts',required=True)
+    pr=sub.add_parser('repair-register');pr.add_argument('--db',required=True);pr.add_argument('--id',required=True);pr.add_argument('--source',required=True)
+    ps=sub.add_parser('repair-summary');ps.add_argument('--db',required=True);ps.add_argument('--id',required=True)
     a=p.parse_args()
     if a.command=='demo':
         work=Path(a.workdir or tempfile.mkdtemp(prefix='evidence-'));work.mkdir(parents=True,exist_ok=True);db=work/'ledger.db';fixture=Path(__file__).resolve().parent.parent/'fixtures'
@@ -58,5 +60,11 @@ def main():
         import json
         from .recall import submit
         print(submit(a.db,a.id,a.recipient,json.loads(Path(a.receipts).read_text(encoding='utf-8'))))
+    elif a.command=='repair-register':
+        from .repair import register
+        print(register(a.db,a.id,a.source))
+    elif a.command=='repair-summary':
+        from .repair import summary
+        print(summary(a.db,a.id))
     else:print(action(a.command,a.db,sandbox=getattr(a,'sandbox',None),out=getattr(a,'out',None)))
 if __name__=='__main__':main()

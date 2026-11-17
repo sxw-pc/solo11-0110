@@ -2,6 +2,8 @@
 
 完全离线，输入与主体均为合成数据。`python -m pip install . --no-build-isolation` 安装；`python -m retaincase demo` 一条命令初始化 SQLite、导入 fixture、计算、生成 JSON/Markdown；`python -m pytest -q` 测试。
 
+本增强素材另有独立导入链修复清单：`repair-register --db DB --id R --source fixtures/repair-incidents.json` 冻结合成的缺口工单与可重跑动作，`repair-summary --db DB --id R` 只数缺口/动作，不选择执行方案。工单不改变现有事件、裁决、删除、交接或回收结果。
+
 数据流：SourceFile 原始字节及哈希 → RawEvent → Subject 与 RuleVersion → Run 内的 Decision、Evidence、Issue → 报告；身份冲突和坏行保留为 Issue。相同文件哈希与事件键幂等。
 
 状态：待接收→已校验→已判定/待核；决策和证据与运行状态事务提交。错误码包括 parse_error、identity_conflict、evidence_gap、rule_conflict、execution_failure。只操作显式沙箱。
