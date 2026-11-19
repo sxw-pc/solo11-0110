@@ -4,6 +4,18 @@
 
 完全离线，输入与主体均为合成数据。`python -m pip install . --no-build-isolation` 安装；`python -m retaincase demo` 一条命令初始化 SQLite、导入 fixture、计算、生成 JSON/Markdown；`python -m pytest -q` 测试。
 
+## 跨失效域副本可用性裁定
+
+每个存储池在登记时声明不可变的 `failure_domain` 与 `tier`（warm/cold）；改域或改层即报 `storage_pool_identity_conflict`。同一失效域内的多份副本只算一个存活点，池目录提供每对象独立路径，跨对象路径冲突被拒绝。`fixtures/sandbox/` 是本地合成对象字节，`fixtures/storage-replica-pools.json` 额外给出同域双冷池与跨域冷池。
+
+`contract-declare --subject A --guard archive_guard|availability_guard --source-root <SANDBOX>` 在最新裁决 run 上冻结保护契约：重新读取实际源文件，绑定对象身份、run、路径、字节数与 SHA-256；guard 一经选择不可改写（`contract_guard_immutable`），新 run 只有在重新核读字节后才能重绑同一契约。
+
+复制是两阶段且可重放的。`replica-reserve` 先核对源文件摘要，再按目标池的独立路径预约容量：容量 = 已放置字节 + 已登记副本字节 + 待落盘预约，两个并发预约不能同时占满最后一份额度（`BEGIN IMMEDIATE` 串行化）。`replica-land` 先把字节写到临时文件、独立重读核对摘要、原子改名后再于最终路径二次核读，最后才写 SQLite；摘要不符的文件被隔离为 `.tampered.*`，预约进入 `rejected` 且释放容量。移动中断（残留 `.part`、改名后未登记）可直接重试，不重复占容量、不把未落盘文件标为可用；已确认副本与历史 `replica_verification` 不被新尝试覆盖。`replica-run` 是两步合一的便捷命令。
+
+`adjudge --storage-root <SANDBOX>` 是暖层退役前的只读裁定：逐对象独立重读每个副本文件并哈希，绝不信任数据库里的 copy_count。`archive_guard` 要求至少一份当前可读、摘要正确的冷存储副本；`availability_guard` 要求至少两个不同失效域各有一份正确可读副本，任一单一失效域退出后仍有存活点。硬阻断（无契约、契约 run 过期、裁决不再冻结、源对象已销毁）给 `indeterminate`；可判定但保护不成立给 `at_risk`，成立给 `protected`，并逐副本给出失效域、文件摘要与逐池容量证据。只有满足契约且退役后仅靠冷层仍满足保护时才给 `can_retire_warm=true`。
+
+`retire-warm` 只是存储层迁移：删除暖层副本文件与暖池放置记录、留存迁移证据，但绝不写 `action=destroy`、不触碰源对象、不会让 `erasure_request` 被错误履约（请求仍按原义务保持 deferred 等状态）；再次调用重放已记录的迁移。删除请求、交接与回执命令的语义不变。
+
 数据流：SourceFile 原始字节及哈希 → RawEvent → Subject 与 RuleVersion → Run 内的 Decision、Evidence、Issue → 报告；身份冲突和坏行保留为 Issue。相同文件哈希与事件键幂等。
 
 状态：待接收→已校验→已判定/待核；决策和证据与运行状态事务提交。错误码包括 parse_error、identity_conflict、evidence_gap、rule_conflict、execution_failure。只操作显式沙箱。

@@ -1,0 +1,10 @@
+{
+  "pools": [
+    {"id": "warm-A", "capacity_bytes": 100, "failure_domain": "zone-warm", "tier": "warm"},
+    {"id": "cold-B", "capacity_bytes": 200, "failure_domain": "zone-cold", "tier": "cold"},
+    {"id": "cold-C", "capacity_bytes": 200, "failure_domain": "zone-cold", "tier": "cold"},
+    {"id": "cold-D", "capacity_bytes": 200, "failure_domain": "zone-cold-2", "tier": "cold"},
+    {"id": "warm-E", "capacity_bytes": 200, "failure_domain": "zone-warm", "tier": "warm"}
+  ],
+  "placements": []
+}

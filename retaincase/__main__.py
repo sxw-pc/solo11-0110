@@ -21,6 +21,17 @@ def main():
     rs=sub.add_parser('recall-submit');rs.add_argument('--db',required=True);rs.add_argument('--id',required=True);rs.add_argument('--recipient',required=True);rs.add_argument('--receipts',required=True)
     sp=sub.add_parser('storage-seed');sp.add_argument('--db',required=True);sp.add_argument('--fixture',required=True)
     si=sub.add_parser('storage-inventory');si.add_argument('--db',required=True)
+    cd=sub.add_parser('contract-declare');cd.add_argument('--db',required=True);cd.add_argument('--subject',required=True)
+    cd.add_argument('--guard',required=True,choices=('archive_guard','availability_guard'))
+    cd.add_argument('--source-root',required=True);cd.add_argument('--source-path')
+    rr=sub.add_parser('replica-reserve');rr.add_argument('--db',required=True);rr.add_argument('--subject',required=True)
+    rr.add_argument('--pool',required=True);rr.add_argument('--target',required=True);rr.add_argument('--source-root',required=True)
+    rl=sub.add_parser('replica-land');rl.add_argument('--db',required=True);rl.add_argument('--reservation',required=True);rl.add_argument('--storage-root',required=True)
+    rn=sub.add_parser('replica-run');rn.add_argument('--db',required=True);rn.add_argument('--subject',required=True)
+    rn.add_argument('--pool',required=True);rn.add_argument('--target',required=True);rn.add_argument('--source-root',required=True);rn.add_argument('--storage-root',required=True)
+    aj=sub.add_parser('adjudge');aj.add_argument('--db',required=True);aj.add_argument('--storage-root',required=True)
+    aj.add_argument('--subjects');aj.add_argument('--out')
+    tw=sub.add_parser('retire-warm');tw.add_argument('--db',required=True);tw.add_argument('--subject',required=True);tw.add_argument('--storage-root',required=True)
     a=p.parse_args()
     if a.command=='demo':
         work=Path(a.workdir or tempfile.mkdtemp(prefix='evidence-'));work.mkdir(parents=True,exist_ok=True);db=work/'ledger.db';fixture=Path(__file__).resolve().parent.parent/'fixtures'
@@ -66,5 +77,28 @@ def main():
     elif a.command=='storage-inventory':
         from .storage import inventory
         print(inventory(a.db))
+    elif a.command=='contract-declare':
+        from .replication import declare_contract
+        print(declare_contract(a.db,a.subject,a.guard,a.source_root,a.source_path))
+    elif a.command=='replica-reserve':
+        from .replication import reserve_replica
+        print(reserve_replica(a.db,a.subject,a.pool,a.target,a.source_root))
+    elif a.command=='replica-land':
+        from .replication import land_replica
+        print(land_replica(a.db,a.reservation,a.storage_root))
+    elif a.command=='replica-run':
+        from .replication import replicate
+        print(replicate(a.db,a.subject,a.pool,a.target,a.source_root,a.storage_root))
+    elif a.command=='adjudge':
+        from .replication import adjudicate
+        import json as _json
+        verdict=adjudicate(a.db,a.storage_root,a.subjects.split(',') if a.subjects else None)
+        if a.out:
+            target=Path(a.out);target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_text(_json.dumps(verdict,ensure_ascii=False,indent=2),encoding='utf-8')
+        print(verdict)
+    elif a.command=='retire-warm':
+        from .replication import retire_warm
+        print(retire_warm(a.db,a.subject,a.storage_root))
     else:print(action(a.command,a.db,sandbox=getattr(a,'sandbox',None),out=getattr(a,'out',None)))
 if __name__=='__main__':main()
