@@ -1,0 +1,19 @@
+{
+  "inventory_csv_path": "FIXTURE_CSV",
+  "deliverable_fields": ["zone", "age_band", "score"],
+  "quasi_identifiers": ["zone"],
+  "k": 2,
+  "max_suppression": 0,
+  "base_levels": {"zone": 0},
+  "lattice": {
+    "zone": [
+      {"name": "zone-exact", "cost": 0},
+      {"name": "zone-top", "cost": 5, "buckets": {"z1": "*", "z2": "*", "z3": "*"}}
+    ],
+    "age_band": [
+      {"name": "age-exact", "cost": 0},
+      {"name": "age-top", "cost": 5, "buckets": {"a2": "*", "a3": "*"}}
+    ]
+  },
+  "lineage": {}
+}

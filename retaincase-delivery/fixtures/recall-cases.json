@@ -1,0 +1,11 @@
+{
+  "additional_subject": {"created":"2026-01-01","category":"ordinary","path":"E.bin","sha256":"25a724334a3ab02be1e6ab79785cd08ccb98941e9e109fbac2b3f405017888c4"},
+  "ack_hashes": {"D":"2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea","E":"25a724334a3ab02be1e6ab79785cd08ccb98941e9e109fbac2b3f405017888c4"},
+  "first_batch": [
+    {"event_key":"receipt-D","subject":"D","sha256":"2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea","certificate":"73bbebfd02d9238d59c6e65ef35c268c61611245cfc204a0da8638f7d169f9a8"},
+    {"event_key":"bad-E","subject":"E","sha256":"0000000000000000000000000000000000000000000000000000000000000000","certificate":"invalid"}
+  ],
+  "retry": [
+    {"event_key":"receipt-E","subject":"E","sha256":"25a724334a3ab02be1e6ab79785cd08ccb98941e9e109fbac2b3f405017888c4","certificate":"a3d31ded59efa4469abb929d8affc06acf068ca8250c7f57859d916b71d69f7a"}
+  ]
+}

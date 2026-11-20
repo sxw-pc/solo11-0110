@@ -1,0 +1,15 @@
+{
+  "inventory_csv_path": "FIXTURE_CSV",
+  "deliverable_fields": ["city", "score"],
+  "quasi_identifiers": ["city"],
+  "k": 2,
+  "max_suppression": 2,
+  "base_levels": {"city": 0},
+  "lattice": {
+    "city": [
+      {"name": "city-exact", "cost": 0},
+      {"name": "city-prefix", "cost": 4, "prefix": 4}
+    ]
+  },
+  "lineage": {}
+}

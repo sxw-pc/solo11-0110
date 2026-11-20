@@ -1,0 +1,15 @@
+{
+  "inventory_csv_path": "FIXTURE_CSV",
+  "deliverable_fields": ["region", "score"],
+  "quasi_identifiers": ["region"],
+  "k": 2,
+  "max_suppression": 1,
+  "base_levels": {"region": 0},
+  "lattice": {
+    "region": [
+      {"name": "region-exact", "cost": 0},
+      {"name": "region-top", "cost": 6, "buckets": {"r1": "*", "r2": "*"}}
+    ]
+  },
+  "lineage": {}
+}

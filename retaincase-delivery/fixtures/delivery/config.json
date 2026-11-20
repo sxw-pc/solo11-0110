@@ -1,0 +1,19 @@
+{
+  "batch_id": "delivery-demo",
+  "rule_version": "v1",
+  "custody_keys": {"analyst-east": "synthetic-analyst-east-key"},
+  "as_of": "2026-06-01",
+  "policy": {
+    "ordinary": {"start": "created", "days": 30},
+    "active": {"start": "last_use", "days": 30}
+  },
+  "subjects": {
+    "A": {"created": "2026-01-01", "category": "ordinary", "path": "A.bin", "tags": ["shared"]},
+    "B": {"created": "2026-01-01", "category": "ordinary", "path": "B.bin", "tags": ["shared"]},
+    "C": {"created": "2026-01-01", "category": "ordinary", "path": "C.bin"},
+    "D": {"created": "2026-01-01", "category": "ordinary", "path": "D.bin"},
+    "E": {"created": "2026-01-01", "category": "ordinary", "path": "E.bin"},
+    "F": {"created": "2026-01-01", "category": "active", "path": "F.bin"},
+    "G": {"created": "2026-01-01", "category": "ordinary", "path": "G.bin"}
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "batch_id": "retain-demo",
+  "rule_version": "v1",
+  "custody_keys": {"receiver-A": "synthetic-receiver-A-key"},
+  "as_of": "2026-06-01",
+  "policy": {
+    "ordinary": {
+      "start": "created",
+      "days": 30
+    },
+    "active": {
+      "start": "last_use",
+      "days": 30
+    }
+  },
+  "subjects": {
+    "A": {
+      "created": "2026-01-01",
+      "category": "ordinary",
+      "path": "A.bin",
+      "tags": [
+        "shared"
+      ]
+    },
+    "B": {
+      "created": "2026-01-01",
+      "category": "ordinary",
+      "path": "B.bin",
+      "tags": [
+        "shared"
+      ]
+    },
+    "C": {
+      "created": "2026-01-01",
+      "category": "active",
+      "path": "C.bin"
+    },
+    "D": {
+      "created": "2026-01-01",
+      "category": "ordinary",
+      "path": "D.bin",
+      "tags": [
+        "regulated"
+      ],
+      "sha256": "2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea"
+    }
+  }
+}

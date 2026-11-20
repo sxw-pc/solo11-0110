@@ -1,0 +1,14 @@
+{
+  "inventory_csv_path": "FIXTURE_CSV",
+  "deliverable_fields": ["age_band", "score"],
+  "quasi_identifiers": ["age_band"],
+  "k": 2,
+  "max_suppression": 0,
+  "base_levels": {"age_band": 0},
+  "lattice": {
+    "age_band": [
+      {"name": "age-exact", "cost": 0}
+    ]
+  },
+  "lineage": {}
+}

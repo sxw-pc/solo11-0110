@@ -1,0 +1,3 @@
+{"event_key": "h-b", "subject": "B", "kind": "hold_start", "hold_id": "court-b", "at": "2026-02-01"}
+{"event_key": "d-b", "subject": "B", "kind": "depends_on", "parent": "A", "at": "2026-02-02"}
+{"event_key": "u-f", "subject": "F", "kind": "use", "at": "2026-05-20"}
