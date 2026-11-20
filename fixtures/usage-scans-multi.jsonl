@@ -1,0 +1,16 @@
+{"event_id":"m1","subject":"D","actor":"operator-1","device":"G1","action":"enter","reported_at":"2026-05-01T08:00:00Z","error_seconds":3600}
+{"event_id":"m2","subject":"D","actor":"operator-1","device":"G1","action":"exit","reported_at":"2026-05-01T09:00:00Z","error_seconds":3600}
+{"event_id":"m3","subject":"D","actor":"operator-1","device":"G1","action":"enter","reported_at":"2026-05-01T12:00:00Z","error_seconds":3600}
+{"event_id":"m4","subject":"D","actor":"operator-1","device":"G1","action":"exit","reported_at":"2026-05-01T13:00:00Z","error_seconds":3600}
+{"event_id":"m5","subject":"D","actor":"operator-1","device":"G2","action":"enter","reported_at":"2026-05-01T09:30:00Z","error_seconds":3600}
+{"event_id":"m6","subject":"D","actor":"operator-1","device":"G2","action":"exit","reported_at":"2026-05-01T10:30:00Z","error_seconds":3600}
+{"event_id":"m7","subject":"D","actor":"operator-1","device":"G2","action":"enter","reported_at":"2026-05-01T14:00:00Z","error_seconds":3600}
+{"event_id":"m8","subject":"D","actor":"operator-1","device":"G2","action":"exit","reported_at":"2026-05-01T15:00:00Z","error_seconds":3600}
+{"event_id":"m9","subject":"D","actor":"operator-1","device":"G3","action":"enter","reported_at":"2026-05-01T11:00:00Z","error_seconds":3600}
+{"event_id":"m10","subject":"D","actor":"operator-1","device":"G3","action":"exit","reported_at":"2026-05-01T11:30:00Z","error_seconds":3600}
+{"event_id":"m11","subject":"D","actor":"operator-1","device":"G3","action":"enter","reported_at":"2026-05-01T16:00:00Z","error_seconds":3600}
+{"event_id":"m12","subject":"D","actor":"operator-1","device":"G3","action":"exit","reported_at":"2026-05-01T17:00:00Z","error_seconds":3600}
+{"event_id":"m13","subject":"C","actor":"operator-2","device":"G3","action":"enter","reported_at":"2026-05-01T20:00:00Z","error_seconds":3600}
+{"event_id":"m14","subject":"C","actor":"operator-2","device":"G3","action":"exit","reported_at":"2026-05-01T20:30:00Z","error_seconds":3600}
+{"event_id":"m15","subject":"C","actor":"operator-2","device":"G1","action":"enter","reported_at":"2026-05-01T21:10:00Z","error_seconds":3600}
+{"event_id":"m16","subject":"C","actor":"operator-2","device":"G1","action":"exit","reported_at":"2026-05-01T21:30:00Z","error_seconds":3600}
