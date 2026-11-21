@@ -4,6 +4,14 @@
 
 `usage-register` 另行冻结留存对象的人员/设备进出扫描，`usage-summary` 只返回原始扫描、人员和设备数，不推断访问会话；这组分析日志不参与可销毁性、交接或删除请求。`fixtures/usage-scans.jsonl` 与 `tests/test_usage.py` 提供离线合成样例。
 
+## 访问会话评估
+
+`usage-assess --db DB --id LOG --gap 120 --contract reported|guaranteed --cutoff 2026-05-02T00:00:00Z --limit 1 --assessment A1` 在已冻结扫描日志上派生设备访问会话：先按 subject+actor+device 把 enter/exit 配成设备访问区间，再把同一 subject+actor 实际重叠或相邻间隔不超过 `gap`（等号也合并）的区间并成会话。只计入报告时间不晚于 `cutoff` 的扫描；截止边界造成的未闭合区间标为待核，不默默算成零会话。重复/缺失出口、enter 不早于 exit、跨设备重叠和不可能的误差交集都给出具体待核原因。
+
+两种口径分别冻结：`reported` 直接用扫描报告时间，回答值班分析员按原始时间线看到的会话数；`guaranteed` 假设每台设备在同一日志内的全部扫描共享一个未知整数秒常数时钟偏移（各设备独立，须同时满足该设备各行的 ±error_seconds），回答全部可行偏移配置下会话数的精确最小值、最大值及可重放的偏移见证。极值由整数超平面排列的完备候选枚举求得，不做随机采样或固定时间网格，成本只取决于区间数而非误差窗口宽度；`usage-verify` 从冻结原始行重新配对并重放见证、核对极值与结论，扫描、阈值或见证被篡改均不通过。
+
+评估绑定冻结的 log_id/源哈希、gap、contract、cutoff、阈值与算法版本（`usage-assess-1.0.0`）：同 assessment_id 同参数幂等，异参数冲突，新日志版本只能另建评估，旧评估不会被新扫描或策略覆盖。该结论独立于留存裁决，`rules.evaluate`、删除请求、交接与回收均不消费它。`fixtures/usage-multi-device.jsonl`、`usage-gap-boundary.jsonl`、`usage-shared-offset.jsonl`、`usage-cutoff.jsonl`、`usage-invalid-exit.jsonl`、`usage-impossible-offset.jsonl` 与 `tests/test_usage_assess.py` 覆盖四行反例、共享/独立偏移、等号边界、多设备交错、无效配对与篡改对账。
+
 数据流：SourceFile 原始字节及哈希 → RawEvent → Subject 与 RuleVersion → Run 内的 Decision、Evidence、Issue → 报告；身份冲突和坏行保留为 Issue。相同文件哈希与事件键幂等。
 
 状态：待接收→已校验→已判定/待核；决策和证据与运行状态事务提交。错误码包括 parse_error、identity_conflict、evidence_gap、rule_conflict、execution_failure。只操作显式沙箱。

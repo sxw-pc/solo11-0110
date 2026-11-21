@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS execution(id INTEGER PRIMARY KEY, run_id INTEGER REFE
 CREATE TABLE IF NOT EXISTS plan(id INTEGER PRIMARY KEY, run_id INTEGER NOT NULL REFERENCES run(id), digest TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS usage_log(id TEXT PRIMARY KEY,batch_id TEXT NOT NULL REFERENCES batch(id),source_hash TEXT NOT NULL,source BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS usage_scan(log_id TEXT NOT NULL REFERENCES usage_log(id),event_id TEXT NOT NULL,subject TEXT NOT NULL REFERENCES subject(id),actor TEXT NOT NULL,device TEXT NOT NULL,action TEXT NOT NULL,reported_at TEXT NOT NULL,error_seconds INTEGER NOT NULL,PRIMARY KEY(log_id,event_id));
+CREATE TABLE IF NOT EXISTS usage_assessment(id TEXT PRIMARY KEY,log_id TEXT NOT NULL REFERENCES usage_log(id),batch_id TEXT NOT NULL REFERENCES batch(id),source_hash TEXT NOT NULL,clock_contract TEXT NOT NULL CHECK(clock_contract IN ('reported','guaranteed')),gap_seconds INTEGER NOT NULL,cutoff TEXT NOT NULL,session_limit INTEGER NOT NULL,param_hash TEXT NOT NULL,algorithm_version TEXT NOT NULL,state TEXT NOT NULL,body TEXT NOT NULL,UNIQUE(log_id,id));
 """
 def connect(path):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)

@@ -1,0 +1,4 @@
+{"event_id":"u1","subject":"D","actor":"operator-1","device":"U1","action":"enter","reported_at":"2026-05-01T10:00:00Z","error_seconds":120}
+{"event_id":"u2","subject":"D","actor":"operator-1","device":"U1","action":"exit","reported_at":"2026-05-01T10:05:00Z","error_seconds":120}
+{"event_id":"u3","subject":"D","actor":"operator-1","device":"U2","action":"enter","reported_at":"2026-05-01T10:30:00Z","error_seconds":120}
+{"event_id":"u4","subject":"D","actor":"operator-1","device":"U2","action":"exit","reported_at":"2026-05-01T10:35:00Z","error_seconds":120}

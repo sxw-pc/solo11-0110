@@ -21,6 +21,10 @@ def main():
     rs=sub.add_parser('recall-submit');rs.add_argument('--db',required=True);rs.add_argument('--id',required=True);rs.add_argument('--recipient',required=True);rs.add_argument('--receipts',required=True)
     u=sub.add_parser('usage-register');u.add_argument('--db',required=True);u.add_argument('--id',required=True);u.add_argument('--source',required=True)
     u=sub.add_parser('usage-summary');u.add_argument('--db',required=True);u.add_argument('--id',required=True)
+    ua=sub.add_parser('usage-assess');ua.add_argument('--db',required=True);ua.add_argument('--id',required=True)
+    ua.add_argument('--gap',required=True,type=int);ua.add_argument('--contract',required=True,choices=('reported','guaranteed'))
+    ua.add_argument('--cutoff',required=True);ua.add_argument('--limit',required=True,type=int);ua.add_argument('--assessment',required=True)
+    uv=sub.add_parser('usage-verify');uv.add_argument('--db',required=True);uv.add_argument('--assessment',required=True)
     a=p.parse_args()
     if a.command=='demo':
         work=Path(a.workdir or tempfile.mkdtemp(prefix='evidence-'));work.mkdir(parents=True,exist_ok=True);db=work/'ledger.db';fixture=Path(__file__).resolve().parent.parent/'fixtures'
@@ -66,5 +70,12 @@ def main():
     elif a.command=='usage-summary':
         from .usage import summary
         print(summary(a.db,a.id))
+    elif a.command=='usage-assess':
+        from .usage import assess
+        print(assess(a.db,a.id,a.gap,a.contract,a.cutoff,a.limit,a.assessment))
+    elif a.command=='usage-verify':
+        from .usage import verify
+        problems=verify(a.db,a.assessment)
+        print({'assessment':a.assessment,'integrity_problems':problems,'ok':not problems})
     else:print(action(a.command,a.db,sandbox=getattr(a,'sandbox',None),out=getattr(a,'out',None)))
 if __name__=='__main__':main()
